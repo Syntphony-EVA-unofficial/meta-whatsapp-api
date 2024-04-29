@@ -1,3 +1,13 @@
+### Before to start.
+
+# EVA account
+You need an account in (EVA) Syntphony Conversational Experience https://www.eva.bot
+The login site is https://[REGION].admin.bot/login
+
+# Get the code
+git clone https://github.com/Syntphony-EVA-unofficial/meta-whatsapp-api.git
+You will need to create/fill with variables and keys a file called variables.env, you can modify variable.env.template as guideline
+
 ### Facebook/Meta setup 
 1. You will need a Facebook bussines account, https://business.facebook.com/
 2. You will need a Meta developer account, https://developers.facebook.com/
