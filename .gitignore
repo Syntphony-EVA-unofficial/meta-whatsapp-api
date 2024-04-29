@@ -1,0 +1,9 @@
+# Python cache files
+__pycache__
+
+# Virtual environment
+.venv/
+
+#variables
+variables.env
+run instructions.md
