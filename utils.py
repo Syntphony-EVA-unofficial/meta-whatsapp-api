@@ -16,7 +16,7 @@ def verify(request: Request):
         if mode == "subscribe" and token == os.getenv("FACEBOOK_VERIFY_TOKEN"):
             # Respond with 200 OK and challenge token from the request
             logging.info("WEBHOOK_VERIFIED")
-            return Response(content=str(challenge), media_type="text/plain", status_code=status.HTTP_200_OK)
+            return {"content": str(challenge), "media_type": "text/plain", "status_code": status.HTTP_200_OK}
 
         else:
             # Responds with '403 Forbidden' if verify tokens do not match
@@ -26,7 +26,6 @@ def verify(request: Request):
         # Responds with '400 Bad Request' if verify tokens do not match
         logging.info("MISSING_PARAMETER")
         raise HTTPException(status_code=400, detail="Missing parameters")
-
 
 def validate_signature(payload: str, signature: str) -> bool:
     """

@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from fastapi import FastAPI, Request, requests
+from fastapi import FastAPI, Request, requests, HTTPException
 import uvicorn
 from dotenv import load_dotenv
 from starlette.responses import Response
@@ -312,7 +312,9 @@ async def GenerateToken():
             token = response.json().get('access_token')
             logging.info(f"token expiration: {response.json().get('expires_in')}")
             return token
-        except requests.exceptions.HTTPError as error:
+        except httpx.HTTPError as error:
+            logging.error("HTTPError  generating Access Token: %s", str(error))
+        except Exception as error:
             logging.error("Error generating Access Token: %s", str(error))
 
  
@@ -328,7 +330,7 @@ db = client[os.getenv("MONGO_DB")]
 whatsapp_users = db['whatsapp_users']
 
 async def find_session(userID: str):
-    logging.info("Finding user TIME: %s", datetime.now(timezone.utc))
+    logging.info("Enter finding user TIME: %s", datetime.now(timezone.utc))
     try:
         evasession_code = None
         eva_token = None
@@ -354,3 +356,5 @@ async def find_session(userID: str):
             return evasession_code, eva_token
     except Exception as error:
         logging.error("Error finding user: %s", error)
+    #this line Return a default value when found_user is None or an exception is raised
+    return None, None  
