@@ -31,28 +31,35 @@ class Session:
         self.UserID = None
 
     async def getSession(self, userID: str):
+        logging.info("Enter to function Get Session TIME: %s", datetime.now(timezone.utc))
+        if self.evaSessionCode is not None and self.evaToken is not None:
+            logging.info("Session already exists")
+            return self.evaSessionCode, self.evaToken
+        else:
+            logging.info("Session does not exist, go finding user...")
+            self.evaSessionCode, self.evaToken = await self.findSession(userID)
+
+
         self.UserID = userID
         updateRecord = False
         if self.evaToken is None:
             self.evaToken= await self.GenerateToken()
-            logging.info(f"Token has been generated")
+            logging.info(f"Token has been generated {str(self.evaToken)[:10]}")
             updateRecord = True
         if self.evaSessionCode is None:
             self.evaSessionCode = await self.GenerateSessionCode()
-            logging.info(f"Session Code has been generated")
+            logging.info(f"Session Code has been generated {str(self.evaSessionCode)[:10]}")
             updateRecord = True
         if updateRecord:
             await self.saveSession()
         return self.evaSessionCode, self.evaToken
 
-    async def findSession(self):
-        logging.info("Enter finding user TIME: %s", datetime.now(timezone.utc))
+    async def findSession(self, userID: str):
+        logging.info("Enter finding user %s TIME: %s",userID, datetime.now(timezone.utc))
         try:
-            if self.evaSessionCode is not None and self.evaToken is not None:
-                return self.evaSessionCode, self.evaToken
-
+           
             query = {
-                "userUniqueID": self.UserID,
+                "userUniqueID": userID,
             }
             found_user = whatsapp_users.find_one(query)
             
@@ -65,10 +72,10 @@ class Session:
                     self.evaSessionCode = found_user["evaSessionCode"]
                 if datetime.now(timezone.utc) - timestamp <= timedelta(seconds=900):  # token expiry time
                     self.evaToken = found_user["evaToken"]
-                if self.evaSessionCode is None and self.evaToken is None:
+                if self.evaSessionCode is None or self.evaToken is None:
                     delete_query = {"userUniqueID": self.UserID}
                     whatsapp_users.delete_many(delete_query)
-                logging.info("evaSessionCode: %s, evaToken: %s", str(self.evaSessionCode)[:10] if self.evaSessionCode else None, str(self.evaToken)[:10] if self.evaToken else None)        
+                logging.info("Found UserInformation evaSessionCode: %s, evaToken: %s", str(self.evaSessionCode)[:10] if self.evaSessionCode else None, str(self.evaToken)[:10] if self.evaToken else None)        
                 return self.evaSessionCode, self.evaToken
         except Exception as error:
             logging.error("Error finding user: %s", error)
@@ -122,7 +129,7 @@ class Session:
             "code": "%EVA_WELCOME_MSG"
             })      
         
-        logging.info(f"Welcome Message to eva config from {self.evaSessionCode}: {self.UserID} at {datetime.now(timezone.utc)}")
+        logging.info(f"Welcome Message to eva config from {self.UserID} at {datetime.now(timezone.utc)}")
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, data=data)
 
@@ -130,7 +137,7 @@ class Session:
             response_data = response.json()
             instanceEvaResponse = ResponseModel.model_validate(response_data)
             logging.info(f"Match to eva response")
-            self.evaSessionCode = instanceEvaResponse.sessionCode
+            return instanceEvaResponse.sessionCode
 
         except ValidationError as e:
             logging.error(f"EvaMessage do not fit the model ResponseModel: {e}") 
@@ -139,6 +146,7 @@ class Session:
 
     async def saveSession(self):
         logging.info("Enter to function Save Session TIME: %s", datetime.now(timezone.utc))
+        #logging.info(f"Eva Session Code: {self.evaSessionCode}, Eva Token: {self.evaToken}, User ID: {self.UserID}")        
         whatsapp_users.update_one(
             {"userUniqueID": self.UserID},
             {"$set": {"evaSessionCode": self.evaSessionCode, "evaToken": self.evaToken, "timestamp": datetime.now(timezone.utc)}},

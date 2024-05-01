@@ -17,7 +17,7 @@ from fastapi import HTTPException
 import pytz
 from pydantic import ValidationError
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 from sessionHandler import Session
 
 load_dotenv('variables.env')
@@ -63,6 +63,9 @@ async def handle_incoming_user_message(request: Request):
                         elif message["type"] == "interactive":
                             await HandleInteractivePressed(message)
                             updateRecord = True
+                        elif message["type"] == "audio":    
+                            await HandleAudioMessage(message)
+                            updateRecord = True
 
                         else:
                             logging.warning(f"Message type not supported: {message['type']}")
@@ -82,7 +85,12 @@ async def handle_incoming_user_message(request: Request):
         raise HTTPException(status_code=500, detail="An error occurred while processing the request.")
 
 
-
+async def HandleAudioMessage(message):
+    # Add your code to handle the text message here
+    logging.info("Handling audio message")
+    
+    return
+    
 
 async def HandleInteractivePressed(message):
     # Add your code to handle the interactive message here  
@@ -105,7 +113,6 @@ async def HandleInteractivePressed(message):
     await send_message_to_eva(valueToEva)     
 
     return   
-
 
 
 async def HandleImageMessage(message):
