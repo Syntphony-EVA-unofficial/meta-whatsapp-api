@@ -1,14 +1,14 @@
-import json
 import logging
+
+import json
 import os
 import time
-from fastapi import FastAPI, Request, requests, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 from dotenv import load_dotenv
 from starlette.responses import Response
 from models import IL_ListMessage, ResponseModel, WebhookData, Answer, MM_MediaMessage, TM_TemplateMessage
 from utils import signature_required, verify
-from pymongo import MongoClient
 from datetime import datetime, timedelta, timezone
 import urllib
 import httpx
@@ -17,18 +17,19 @@ from fastapi import HTTPException
 import pytz
 from pydantic import ValidationError
 
+logging.basicConfig(level=logging.DEBUG)
+from sessionHandler import Session
 
 load_dotenv('variables.env')
-
-logging.basicConfig(level=logging.DEBUG)
-logging.info("Starting the application")
-
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="debug")
 
+
 app = FastAPI()
 
+#defining the sessioncode and sessiontoken as none
+session = Session()
 
 #Verify the webhook from WhatsApp API configuration, this is only needed once
 @app.get("/webhook")
@@ -46,6 +47,7 @@ async def middleware(request: Request, call_next):
 async def handle_incoming_user_message(request: Request):
     try:
         data = await request.json()
+        updateRecord = False
         #print(json.dumps(data, indent=4))
         try:
             webhook_data = WebhookData(**data)
@@ -54,12 +56,18 @@ async def handle_incoming_user_message(request: Request):
                     for message in change.value.messages:
                         if message["type"] == "text":
                             await HandleTextMessage(message)
+                            updateRecord = True
                         elif message["type"] == "image":
                             await HandleImageMessage(message)
+                            updateRecord = True
                         elif message["type"] == "interactive":
                             await HandleInteractivePressed(message)
+                            updateRecord = True
+
                         else:
                             logging.warning(f"Message type not supported: {message['type']}")
+            if updateRecord:
+                await session.saveSession()
             return {"status": "ok"}
         except ValidationError:
             #message must be status read,sent,delivered
@@ -85,18 +93,16 @@ async def HandleInteractivePressed(message):
     interactive_message = json.dumps(message, indent=4)
     logging.info(f"Data of interactive: {interactive_message}")  # Corrected line
     
-    evaSesionCode, evaToken = await find_session(message["from"])
+    evaSessionCode, evaToken = await session.getSession(message["from"])
+    
     
     if (message["interactive"]["type"] == "button_reply"):
         valueToEva = message["interactive"]["button_reply"]["id"]
     elif (message["interactive"]["type"] == "list_reply"):
         valueToEva = message["interactive"]["list_reply"]["id"]
 
-    if evaToken is None:
-        evaToken= await GenerateToken()
-        logging.info(f"Token has been generated")
     
-    await send_message_to_eva(evaSesionCode, evaToken,  valueToEva, message["from"])     
+    await send_message_to_eva(valueToEva)     
 
     return   
 
@@ -109,18 +115,15 @@ async def HandleImageMessage(message):
 async def HandleTextMessage(message):
 
     logging.info("Handling text message")
-    evaSesionCode, evaToken = await find_session(message["from"])
+    evaSessionCode, evaToken = await session.getSession(message["from"])
+
     
-    if evaToken is None:
-        evaToken= await GenerateToken()
-        logging.info(f"Token has been generated")
-    
-    await send_message_to_eva(evaSesionCode, evaToken,  message["text"]["body"], message["from"])     
+    await send_message_to_eva(message["text"]["body"])     
 
     return   
 
 
-async def send_message_to_eva(session_code, access_token, user_message, user_id):
+async def send_message_to_eva( user_message):
     logging.info(f"Sending message to evaBroker (TIME) {datetime.now(timezone.utc)}")
     instance = os.getenv('EVA_INSTANCE')  
     orgUUID = os.getenv('EVA_ORG_UUID')
@@ -129,21 +132,20 @@ async def send_message_to_eva(session_code, access_token, user_message, user_id)
     channelUUID = os.getenv('EVA_CHANNEL_UUID')
     api_key = os.getenv('EVA_APIKEY')  # replace with your API key
 
-    url = f"https://{instance}/eva-broker/org/{orgUUID}/env/{envUUID}/bot/{botUUID}/channel/{channelUUID}/v1/conversations"
-    if session_code is not None:
-        url += f"/{session_code}"
+    url = f"https://{instance}/eva-broker/org/{orgUUID}/env/{envUUID}/bot/{botUUID}/channel/{channelUUID}/v1/conversations/{ session.evaSessionCode }"
+
     headers = {
         'Content-Type': 'application/json',
         'API-KEY': api_key,
         'OS': 'Windows',
-        'USER-REF': user_id,
+        'USER-REF': session.UserID,
         'LOCALE': 'en-US',
-        'Authorization': f'Bearer {access_token}'
+        'Authorization': f'Bearer {session.evaToken}'
     }
     data = json.dumps({
         "text": user_message
     })
-    logging.info(f"Message to eva config from {session_code}: {user_message} at {datetime.now(timezone.utc)}")
+    logging.info(f"Message to eva config from {session.evaSessionCode}: {user_message} at {datetime.now(timezone.utc)}")
     async with httpx.AsyncClient() as client:
         response = await client.post(url, headers=headers, data=data)
 
@@ -161,12 +163,11 @@ async def send_message_to_eva(session_code, access_token, user_message, user_id)
 
     logging.info(f"Respuesta evaBroker (TIME) {datetime.now(timezone.utc)}")
     answers = instanceEvaResponse.answers
-    eva_session = instanceEvaResponse.sessionCode
 
     logging.info("Print all answers:")
 
     for answer in answers:
-        headers, data = prepare_message(answer, user_id)
+        headers, data = prepare_message(answer, session.UserID)
         response = send_message_whatsapp(headers, data)
     
         # Check the response status
@@ -176,12 +177,7 @@ async def send_message_to_eva(session_code, access_token, user_message, user_id)
         # Wait for 1 second before sending the next message
         time.sleep(1)
 
-    # Update the records with the new session code and access token
-    whatsapp_users.update_one(
-        {"userUniqueID": user_id},
-        {"$set": {"evaSessionCode": eva_session, "evaToken": access_token, "timestamp": datetime.now(timezone.utc)}},
-        upsert=True
-        )
+
 
 def prepare_message(answer: Answer, user_id):
     logging.info(f"Preparing message for WhatsApp API")
@@ -294,67 +290,7 @@ def send_message_whatsapp(headers, data):
         response.raise_for_status()
         return response
 
-async def GenerateToken():
-    logging.info("Enter to function Token Gen TIME: %s", datetime.now(timezone.utc))
-    data = {
-        'grant_type': 'client_credentials',
-        'client_id': os.getenv('EVA_CLIENT_ID'),
-        'client_secret': os.getenv('EVA_SECRET'),
-    }
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    url = f"{os.getenv('EVA_KEYCLOAK')}/auth/realms/{os.getenv('EVA_ORGANIZATION')}/protocol/openid-connect/token"
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(url, headers=headers, data=urllib.parse.urlencode(data))
-            response.raise_for_status()
-            token = response.json().get('access_token')
-            logging.info(f"token expiration: {response.json().get('expires_in')}")
-            return token
-        except httpx.HTTPError as error:
-            logging.error("HTTPError  generating Access Token: %s", str(error))
-        except Exception as error:
-            logging.error("Error generating Access Token: %s", str(error))
 
  
-# MongoDB
 
-logging.info(f"MongoDB URI: {os.getenv('MONGO_URI')}, Database: {os.getenv('MONGO_DB')}")
 
-uri = f"{os.getenv('MONGO_URI')}?retryWrites=true&w=majority"
-logging.info(f"Connecting to MongoDB: {uri}")
-
-client = MongoClient(uri)
-db = client[os.getenv("MONGO_DB")]
-whatsapp_users = db['whatsapp_users']
-
-async def find_session(userID: str):
-    logging.info("Enter finding user TIME: %s", datetime.now(timezone.utc))
-    try:
-        evasession_code = None
-        eva_token = None
-
-        query = {
-            "userUniqueID": userID,
-        }
-        found_user = whatsapp_users.find_one(query)
-        
-        if found_user is not None:
-            logging.info("Found User Result: %s", found_user["userUniqueID"])
-            timestamp = found_user["timestamp"]
-            timestamp = timestamp.replace(tzinfo=pytz.UTC)
-
-            if datetime.now(timezone.utc) - timestamp <= timedelta(seconds=1800):  # session code expiry time
-                evasession_code = found_user["evaSessionCode"]
-            if datetime.now(timezone.utc) - timestamp <= timedelta(seconds=900):  # token expiry time
-                eva_token = found_user["evaToken"]
-            if evasession_code is None and eva_token is None:
-                delete_query = {"userUniqueID": userID}
-                whatsapp_users.delete_many(delete_query)
-            logging.info("evaSessionCode: %s, evaToken: %s", str(evasession_code)[:10] if evasession_code else None, str(eva_token)[:10] if eva_token else None)        
-            return evasession_code, eva_token
-    except Exception as error:
-        logging.error("Error finding user: %s", error)
-    #this line Return a default value when found_user is None or an exception is raised
-    return None, None  
