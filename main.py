@@ -65,7 +65,7 @@ async def handle_incoming_user_message(request: Request):
                             updateRecord = True
                         elif message["type"] == "audio":    
                             await HandleAudioMessage(message)
-                            updateRecord = True
+                            #updateRecord = True
 
                         else:
                             logging.warning(f"Message type not supported: {message['type']}")
@@ -87,10 +87,66 @@ async def handle_incoming_user_message(request: Request):
 
 async def HandleAudioMessage(message):
     # Add your code to handle the text message here
-    logging.info("Handling audio message")
-    
-    return
-    
+    audioID = message["audio"]["id"] 
+    audioURL = await getAudioURL(audioID)
+    if (audioURL):
+        downloadAudio = await getDownloadAudio(audioURL)
+        if (downloadAudio):
+            logging.info(f"Audio message downloaded successfully")
+            if isinstance(downloadAudio, bytes):
+                print("The downloadAudio data is in binary format")
+            else:
+                print("The downloadAudio data is not in binary format")
+
+async def getDownloadAudio(audioURL):    
+    try:
+        # Download the audio file
+        async with httpx.AsyncClient() as client:
+            audio_response = await client.get(audioURL)
+
+        # Store the audio data in a variable
+        audio_data = audio_response.content
+        return audio_data
+
+    except httpx.HTTPStatusError as exc:
+        print(f"An HTTP error occurred: {exc}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
+
+async def getAudioURL(audioID):
+    logging.info(f"Data of AudioMessage: {audioID}")  # Corrected line
+    #get audio message
+
+    # Define the endpoint
+    url = f"https://graph.facebook.com/v19.0/{audioID}"
+
+    # Define the headers
+    headers = {
+        'Authorization': f'Bearer {os.getenv("FACEBOOK_ACCESS_TOKEN")}'
+    }
+
+    logging.info(f"Trying to get audio message from {url}")
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+
+    try:
+        response_data = response.json()
+        logging.info(f"data Response {response_data}")
+        logging.info(json.dumps(response_data, indent=4))
+        return response_data["url"] 
+
+    except json.JSONDecodeError:
+        logging.error("Failed to decode JSON response")
+        return None
+    except KeyError:
+        logging.error("The key 'url' was not found in the response data")
+        return None
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+        return None
+
 
 async def HandleInteractivePressed(message):
     # Add your code to handle the interactive message here  
