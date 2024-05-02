@@ -128,7 +128,7 @@ async def HandleAudioMessage(message):
 
 
 
-def transcribe_file_v2(  project_id: str,    audio_data: bytes,) -> cloud_speech.RecognizeResponse:
+def transcribe_file_v2(  project_id: str, audio_data: bytes,) -> cloud_speech.RecognizeResponse:
     # Instantiates a client
     credentials = service_account.Credentials.from_service_account_file('key.json')
     client = SpeechClient(credentials=credentials)
