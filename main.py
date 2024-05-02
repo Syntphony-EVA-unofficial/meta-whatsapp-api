@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import time
+import traceback
 from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 from dotenv import load_dotenv
@@ -24,13 +25,13 @@ import aiohttp
 import aiofiles
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 from sessionHandler import Session
 
 load_dotenv('variables.env')
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True, log_level="debug")
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8001)), reload=True, log_level="debug")
 
 
 app = FastAPI()
@@ -41,18 +42,31 @@ session = Session()
 #Verify the webhook from WhatsApp API configuration, this is only needed once
 @app.get("/webhook")
 async def verify_webhook(request: Request):
-    response = verify(request)
-    return Response(content=response["content"], media_type=response["media_type"], status_code=response["status_code"])
+    try:
+        logging.info("Verifying webhook")
+        response = verify(request)
+        return Response(content=response["content"], media_type=response["media_type"], status_code=response["status_code"])
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+        logging.error(traceback.format_exc())
 
-#This singature is to be sure that the request is coming from WhatsApp API
-@app.middleware("http")
-async def middleware(request: Request, call_next):
-    return await signature_required(request, call_next)
+@app.get("/test")
+def test_endpoint():
+    return {"message": "This is a test endpoint"}
 
 
 @app.post("/webhook")
 async def handle_incoming_user_message(request: Request):
+      
+    try:   
+        #This singature is to be sure that the request is coming from WhatsApp API
+        await signature_required(request)
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
     try:
+
         data = await request.json()
         updateRecord = False
         #print(json.dumps(data, indent=4))

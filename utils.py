@@ -1,9 +1,12 @@
 import os
+import logging
 import hmac
 import hashlib
 from fastapi import Request, HTTPException, status
 from fastapi.responses import Response
-import logging
+from dotenv import load_dotenv
+
+load_dotenv('variables.env')
 
 def verify(request: Request):
     params = request.query_params
