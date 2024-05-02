@@ -44,7 +44,7 @@ def validate_signature(payload: str, signature: str) -> bool:
     # Check if the signature matches
     return hmac.compare_digest(expected_signature, signature)
 
-async def signature_required(request: Request, call_next):
+async def signature_required(request: Request):
     signature = request.headers.get("X-Hub-Signature-256", "")[7:]  # Removing 'sha256='
     body = await request.body()
     if not validate_signature(body.decode("utf-8"), signature):
@@ -52,5 +52,4 @@ async def signature_required(request: Request, call_next):
         raise HTTPException(status_code=403, detail="Invalid signature")
     else: 
         logging.info("Signature verification passed!")
-    return await call_next(request)
 
