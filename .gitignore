@@ -4,7 +4,11 @@ __pycache__
 # Virtual environment
 .venv/
 
+#google Key
+key.json
+
 #variables
 variables.env
 run instructions.md
+
 variables.saldy.env

@@ -16,6 +16,13 @@ import urllib.parse
 from fastapi import HTTPException
 import pytz
 from pydantic import ValidationError
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+from google.oauth2 import service_account
+
+import aiohttp
+import aiofiles
+
 
 logging.basicConfig(level=logging.INFO)
 from sessionHandler import Session
@@ -23,7 +30,7 @@ from sessionHandler import Session
 load_dotenv('variables.env')
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="debug")
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True, log_level="debug")
 
 
 app = FastAPI()
@@ -94,15 +101,60 @@ async def HandleAudioMessage(message):
         if (downloadAudio):
             logging.info(f"Audio message downloaded successfully")
             if isinstance(downloadAudio, bytes):
-                print("The downloadAudio data is in binary format")
+                logging.info("The downloadAudio data is in binary format")
+                logging.info(f"The size of the binary data is {len(downloadAudio)} bytes")
+                STT_Result = transcribe_file_v2("seu-whatsapp-api",downloadAudio)
+                if STT_Result:
+                    evaSessionCode, evaToken = await session.getSession(message["from"])
+                    await send_message_to_eva(STT_Result)
+                    return    
             else:
-                print("The downloadAudio data is not in binary format")
+                logging.info("The downloadAudio data is not in binary format")
+                return
+
+
+
+def transcribe_file_v2(  project_id: str,    audio_data: bytes,) -> cloud_speech.RecognizeResponse:
+    # Instantiates a client
+    credentials = service_account.Credentials.from_service_account_file('key.json')
+    client = SpeechClient(credentials=credentials)
+
+    # Reads a file as bytes
+    content = audio_data
+    config = cloud_speech.RecognitionConfig(
+        auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+        language_codes=["en-US", "es-ES", "fr-FR", "pt-BR"],
+        model="long",
+    )
+
+    request = cloud_speech.RecognizeRequest(
+        recognizer=f"projects/{project_id}/locations/global/recognizers/_",
+        config=config,
+        content=content,
+    )
+
+    logging.info(f"Transcribing audio file")
+    # Transcribes the audio into text
+    try:
+        response = client.recognize(request=request)
+        logging.info(f"Transcriptionw all results: {response.results}")
+        return response.results[0].alternatives[0].transcript
+    
+    except Exception as e:
+        logging.error(f"An error occurred in Transcribe: {e}")
+        return None
 
 async def getDownloadAudio(audioURL):    
+    
+    # Define the headers
+    headers = {
+        'Authorization': f'Bearer {os.getenv("FACEBOOK_ACCESS_TOKEN")}'
+    }
+    
     try:
         # Download the audio file
         async with httpx.AsyncClient() as client:
-            audio_response = await client.get(audioURL)
+            audio_response = await client.get(audioURL, headers=headers)
 
         # Store the audio data in a variable
         audio_data = audio_response.content
@@ -111,9 +163,16 @@ async def getDownloadAudio(audioURL):
     except httpx.HTTPStatusError as exc:
         print(f"An HTTP error occurred: {exc}")
         return None
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+    except httpx.NetworkError:
+        print("A network error occurred.")
         return None
+    except httpx.TimeoutException:
+        print("The request timed out.")
+        return None
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+        return None
+        
 
 async def getAudioURL(audioID):
     logging.info(f"Data of AudioMessage: {audioID}")  # Corrected line
