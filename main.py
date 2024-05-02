@@ -25,9 +25,9 @@ import aiohttp
 import aiofiles
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 from sessionHandler import Session
-
+ 
 load_dotenv('variables.env')
 
 if __name__ == "__main__":
@@ -91,7 +91,7 @@ async def handle_incoming_user_message(request: Request):
                         else:
                             logging.warning(f"Message type not supported: {message['type']}")
             if updateRecord:
-                await session.saveSession()
+                await session.updateTime()
             return {"status": "ok"}
         except ValidationError:
             #message must be status read,sent,delivered
@@ -284,9 +284,16 @@ async def send_message_to_eva( user_message):
     logging.info(f"Message to eva config from {session.evaSessionCode}: {user_message} at {datetime.now(timezone.utc)}")
     async with httpx.AsyncClient() as client:
         response = await client.post(url, headers=headers, data=data)
+    
+        if response.status_code == 401:
+            newToken = await session.RenewToken()
+            headers['Authorization'] = f'Bearer {newToken}'
+            response = await client.post(url, headers=headers, data=data)
 
+    
     try:
         response_data = response.json()
+        #if 'error' in response_data:
         instanceEvaResponse = ResponseModel.model_validate(response_data)
         logging.info(f"Match to eva response")
 
@@ -295,25 +302,19 @@ async def send_message_to_eva( user_message):
         print(json.dumps(response_data, indent=4))
         return
 
-
-
     logging.info(f"Respuesta evaBroker (TIME) {datetime.now(timezone.utc)}")
     answers = instanceEvaResponse.answers
 
     logging.info("Print all answers:")
-
     for answer in answers:
         headers, data = prepare_message(answer, session.UserID)
         response = send_message_whatsapp(headers, data)
-    
         # Check the response status
         if response.status_code != 200:
             logging.error(f"Failed to send message: {response.text}")
             break
         # Wait for 1 second before sending the next message
         time.sleep(1)
-
-
 
 def prepare_message(answer: Answer, user_id):
     logging.info(f"Preparing message for WhatsApp API")
@@ -383,10 +384,12 @@ def prepare_message(answer: Answer, user_id):
                 logging.info(f"Template message detected")
                 data["type"] = "template"
                 data["template"] = instanceTemplateMessage.template.model_dump()
-                data["template"]["namespace"] = os.getenv("FACEBOOK_TEMPLATE_NAMESPACE")
+                if "namespace" not in data["template"] or data["template"]["namespace"] is None:
+                    data["template"]["namespace"] = os.getenv("FACEBOOK_TEMPLATE_NAMESPACE")
                 
             except ValidationError as e:
-                logging.error(f"Message is not TM_TemplateMessage: {e}")    
+                logging.error(f"Message is not TM_TemplateMessage: {e}")
+                logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")    
 
 
         if not model_found:

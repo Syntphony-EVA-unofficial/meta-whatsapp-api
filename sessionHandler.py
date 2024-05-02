@@ -51,8 +51,18 @@ class Session:
             logging.info(f"Session Code has been generated {str(self.evaSessionCode)[:10]}")
             updateRecord = True
         if updateRecord:
-            await self.saveSession()
+            await self.saveSession(self.evaSessionCode, self.evaToken)
         return self.evaSessionCode, self.evaToken
+
+    async def RenewToken(self):
+        self.evaToken= await self.GenerateToken()
+        logging.info(f"RenewToken has been generated {str(self.evaToken)[:10]}")
+        await self.saveSession(self.evaSessionCode, self.evaToken)
+        return self.evaToken
+
+    async def updateTime(self):
+        timestamp = await self.saveSession(self.evaSessionCode, self.evaToken)
+        logging.info(f"Update Time of session values: {timestamp}")
 
     async def findSession(self, userID: str):
         logging.info("Enter finding user %s TIME: %s",userID, datetime.now(timezone.utc))
@@ -144,11 +154,13 @@ class Session:
             print(json.dumps(response_data, indent=4))
             return
 
-    async def saveSession(self):
-        logging.info("Enter to function Save Session TIME: %s", datetime.now(timezone.utc))
+    async def saveSession(self, evaSessionCode: str, evaToken: str):
+        timestamp = datetime.now(timezone.utc)
+        logging.info("Enter to function Save Session TIME: %s", timestamp)
         #logging.info(f"Eva Session Code: {self.evaSessionCode}, Eva Token: {self.evaToken}, User ID: {self.UserID}")        
         whatsapp_users.update_one(
             {"userUniqueID": self.UserID},
-            {"$set": {"evaSessionCode": self.evaSessionCode, "evaToken": self.evaToken, "timestamp": datetime.now(timezone.utc)}},
+            {"$set": {"evaSessionCode": evaSessionCode, "evaToken": evaToken, "timestamp": timestamp}},
             upsert=True
             )
+        return timestamp

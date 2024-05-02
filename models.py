@@ -117,20 +117,24 @@ class MM_MediaMessage(BaseModel):
     link: HttpUrl
 
 ### Models for the Whatsapp API. TM for Template Message
-class TM_Parameter(BaseModel):
-    type: Optional[str]
-    text: Optional[str]
+
 
 class TM_Component(BaseModel):
     type: str
-    parameters: List[TM_Parameter]
+    parameters: List[Dict[str, Any]]
+    sub_type: Optional[str] = None
+    index: Optional[str] = None
+    class Config:
+        exclude_none = True
 
 class TM_Language(BaseModel):
-    policy: str
+    policy: Optional[str] = None
     code: str
+    class Config:
+        exclude_none = True
 
 class TM_Template(BaseModel):
-    namespace: Optional[str]
+    namespace: Optional[str]  = None
     name: str
     language: TM_Language
     components: List[TM_Component]
