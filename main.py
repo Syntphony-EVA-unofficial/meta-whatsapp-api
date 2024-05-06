@@ -1,10 +1,12 @@
 import logging
-
 import json
 import os
 import time
 import traceback
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 import uvicorn
 from dotenv import load_dotenv
 from starlette.responses import Response
@@ -20,24 +22,27 @@ from pydantic import ValidationError
 from google.cloud.speech_v2 import SpeechClient
 from google.cloud.speech_v2.types import cloud_speech
 from google.oauth2 import service_account
+from admin.admin import router as admin_router
 
 import aiohttp
 import aiofiles
-
-
 logging.basicConfig(level=logging.INFO)
-from sessionHandler import Session
+
+
+from sessionHandler import session
  
 load_dotenv('variables.env')
 
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8001)), reload=True, log_level="debug")
 
 
 app = FastAPI()
+app.include_router(admin_router)
 
-#defining the sessioncode and sessiontoken as none
-session = Session()
+app.mount("/admin", StaticFiles(directory="admin"), name="admin")
+templates = Jinja2Templates(directory="admin")
+
+    
+
 
 #Verify the webhook from WhatsApp API configuration, this is only needed once
 @app.get("/webhook")
@@ -46,18 +51,30 @@ async def verify_webhook(request: Request):
         logging.info("Verifying webhook")
         response = verify(request)
         return Response(content=response["content"], media_type=response["media_type"], status_code=response["status_code"])
+    except HTTPException as e:
+        logging.error(f"HTTP error occurred: {e.detail}")
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         logging.error(traceback.format_exc())
+        return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred"})
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_form(request: Request):
+    return templates.TemplateResponse("admin.html", {"request": request})
 
 @app.get("/test")
 def test_endpoint():
     return {"message": "This is a test endpoint"}
 
-
 @app.post("/webhook")
-async def handle_incoming_user_message(request: Request):
-      
+async def handle_incoming_user_message(request: Request, botid: str, phoneid: str):
+
+    if not await session.load_config(botid, phoneid):
+        logging.error("Failed to load config data")
+        raise HTTPException(status_code=500, detail="Failed to load config data")
+
     try:   
         #This singature is to be sure that the request is coming from WhatsApp API
         await signature_required(request)
@@ -115,7 +132,6 @@ async def HandleAudioMessage(message):
         if (downloadAudio):
             logging.info(f"Audio message downloaded successfully")
             if isinstance(downloadAudio, bytes):
-                logging.info("The downloadAudio data is in binary format")
                 logging.info(f"The size of the binary data is {len(downloadAudio)} bytes")
                 STT_Result = transcribe_file_v2("seu-whatsapp-api",downloadAudio)
                 if STT_Result:
@@ -162,7 +178,7 @@ async def getDownloadAudio(audioURL):
     
     # Define the headers
     headers = {
-        'Authorization': f'Bearer {os.getenv("FACEBOOK_ACCESS_TOKEN")}'
+        'Authorization': f'Bearer {session.getenv("FACEBOOK_ACCESS_TOKEN")}'
     }
     
     try:
@@ -197,7 +213,7 @@ async def getAudioURL(audioID):
 
     # Define the headers
     headers = {
-        'Authorization': f'Bearer {os.getenv("FACEBOOK_ACCESS_TOKEN")}'
+        'Authorization': f'Bearer {session.getenv("FACEBOOK_ACCESS_TOKEN")}'
     }
 
     logging.info(f"Trying to get audio message from {url}")
@@ -261,12 +277,12 @@ async def HandleTextMessage(message):
 
 async def send_message_to_eva( user_message):
     logging.info(f"Sending message to evaBroker (TIME) {datetime.now(timezone.utc)}")
-    instance = os.getenv('EVA_INSTANCE')  
-    orgUUID = os.getenv('EVA_ORG_UUID')
-    envUUID = os.getenv('EVA_ENV_UUID')
-    botUUID = os.getenv('EVA_BOT_UUID')
-    channelUUID = os.getenv('EVA_CHANNEL_UUID')
-    api_key = os.getenv('EVA_APIKEY')  # replace with your API key
+    instance = session.getenv('INSTANCE')  
+    orgUUID = session.getenv('ORGANIZATION_ID')
+    envUUID = session.getenv('ENVIRONMENT_ID')
+    botUUID = session.getenv('BOT_ID')
+    channelUUID = session.getenv('CHANNEL_ID')
+    api_key = session.getenv('API_KEY')  # replace with your API key
 
     url = f"https://{instance}/eva-broker/org/{orgUUID}/env/{envUUID}/bot/{botUUID}/channel/{channelUUID}/v1/conversations/{ session.evaSessionCode }"
 
@@ -281,7 +297,6 @@ async def send_message_to_eva( user_message):
     data = json.dumps({
         "text": user_message
     })
-    logging.info(f"Message to eva config from {session.evaSessionCode}: {user_message} at {datetime.now(timezone.utc)}")
     async with httpx.AsyncClient() as client:
         response = await client.post(url, headers=headers, data=data)
     
@@ -295,17 +310,14 @@ async def send_message_to_eva( user_message):
         response_data = response.json()
         #if 'error' in response_data:
         instanceEvaResponse = ResponseModel.model_validate(response_data)
-        logging.info(f"Match to eva response")
 
     except ValidationError as e:
         logging.error(f"EvaMessage do not fit the model ResponseModel: {e}") 
         print(json.dumps(response_data, indent=4))
         return
 
-    logging.info(f"Respuesta evaBroker (TIME) {datetime.now(timezone.utc)}")
     answers = instanceEvaResponse.answers
 
-    logging.info("Print all answers:")
     for answer in answers:
         headers, data = prepare_message(answer, session.UserID)
         response = send_message_whatsapp(headers, data)
@@ -319,7 +331,7 @@ async def send_message_to_eva( user_message):
 def prepare_message(answer: Answer, user_id):
     logging.info(f"Preparing message for WhatsApp API")
     headers = {
-        'Authorization': f"Bearer {os.getenv('FACEBOOK_ACCESS_TOKEN')}",
+        'Authorization': f"Bearer {session.getenv('FACEBOOK_ACCESS_TOKEN')}",
         'Content-Type': 'application/json',
     }
     
@@ -384,8 +396,8 @@ def prepare_message(answer: Answer, user_id):
                 logging.info(f"Template message detected")
                 data["type"] = "template"
                 data["template"] = instanceTemplateMessage.template.model_dump()
-                if "namespace" not in data["template"] or data["template"]["namespace"] is None:
-                    data["template"]["namespace"] = os.getenv("FACEBOOK_TEMPLATE_NAMESPACE")
+                #if "namespace" not in data["template"] or data["template"]["namespace"] is None:
+                #    data["template"]["namespace"] = session.getenv("FACEBOOK_TEMPLATE_NAMESPACE")
                 
             except ValidationError as e:
                 logging.error(f"Message is not TM_TemplateMessage: {e}")
@@ -421,13 +433,16 @@ def send_message_whatsapp(headers, data):
     logging.info(f"Data: {json.dumps(data, indent=4)}")  # Add this line
     
     with httpx.Client() as client:        
-        response = client.post(f"https://graph.facebook.com/v18.0/{os.getenv('FACEBOOK_PHONE_ID')}/messages", headers=headers, data=json.dumps(data))
+        response = client.post(f"https://graph.facebook.com/v18.0/{session.getenv('FACEBOOK_PHONE_ID')}/messages", headers=headers, data=json.dumps(data))
         if response.status_code != 200:
             logging.error(f"Response status: {response.status_code}")
             logging.error(f"Response headers: {response.headers}")
             logging.error(f"Response body: {response.text}")
         response.raise_for_status()
         return response
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True, log_level="debug")
 
 
  

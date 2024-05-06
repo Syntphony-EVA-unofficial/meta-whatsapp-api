@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Webhook Configuration</title>
+<link rel="icon" href="/admin/images/eva_Logo.png" type="image/png" >
+<style>
+    ::placeholder { /* Selects all placeholders */
+    color: lightgray; /* Change the color to gray */
+    opacity: 1; /* Override browser default opacity */
+    font-style: italic; /* Make the placeholder text italic */
+
+}
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+
+    }
+    form {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        padding: 20px 40px; /* Increased right padding */
+        width: 100%;
+        max-width: 350px;
+    }
+    h1 {
+        font-size: 17px;
+        color: #333;
+    }
+    h2 {
+        font-size: 18px;
+        color: #333;
+    }
+    p {
+        font-size: 16px;
+        color: #666;
+    }
+    label {
+        font-size: 14px;
+        color: #333;
+        display: block;
+        margin: 15px 0 5px;
+    }
+    input[type="text"], input[type="password"] {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }
+    input[type="submit"] {
+        width: 100%;
+        padding: 10px;
+        background-color: #0056b3;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 20px;
+    }
+    input[type="submit"]:hover {
+        background-color: #004494;
+    }
+    img {
+        height: 80px;
+        margin-bottom: 20px;
+    }
+    .disclaimer {
+        font-size: 12px;
+    }
+</style>
+</head>
+<body>
+<form action="/admin/form" method="post">
+    <img src="/admin/images/logo.png" alt="Logo">
+
+    <h2>Add Webhook Listener</h2>
+    <p>Connect your Facebook Business Whatsapp number to a bot in Syntphony Conversational AI.</p>
+    
+    <h1>Disclaimer</h1>
+    <p class="disclaimer">This is a project for the Meta-eva connector 
+        <a href="https://github.com/Syntphony-EVA-unofficial/meta-whatsapp-api">https://github.com/Syntphony-EVA-unofficial/meta-whatsapp-api</a> </p>
+    <p class="disclaimer">This project is part of the 
+        <a href="https://github.com/Syntphony-EVA-unofficial">Syntphony-EVA-unofficial Hub</a></p>
+    
+
+    <label for="Organization_name">Organization Name:</label>
+    <input type="text" id="organization_name" name="organization_name" autocomplete="on">
+
+    <label for="Email">Email:</label>
+    <input type="text" id="email" name="email" autocomplete="on">
+
+    <label for="Password">Password:</label>
+    <input type="password" id="password" name="password" autocomplete="on">
+
+    <p class="disclaimer">Note: Use the same credentials used to login in https://REGION-admin.eva.bot/login</p>
+
+    <hr>
+    <label for="facebook_access_token">Facebook Access Token:</label>
+    <input type="text" id="facebook_access_token" name="facebook_access_token" autocomplete="on" >
+
+    <label for="facebook_app_id">Facebook App ID:</label>
+    <input type="text" id="facebook_app_id" name="facebook_app_id" autocomplete="on" >
+
+    <label for="facebook_app_secret">Facebook App Secret:</label>
+    <input type="text" id="facebook_app_secret" name="facebook_app_secret" autocomplete="on" >
+
+    <label for="facebook_verify_token">Facebook Verify Token:</label>
+    <input type="text" id="facebook_verify_token" name="facebook_verify_token" autocomplete="on" >
+
+    <label for="facebook_phone_id">Facebook Phone ID:</label>
+    <input type="text" id="facebook_phone_id" name="facebook_phone_id" autocomplete="on" placeholder="Enter Facebook Phone ID, not the phone number">
+    
+    <p class="disclaimer">Note: All this variables can be obtained from https://developers.facebook.com/</p>
+    <hr>
+
+    <label for="keycloak">Keycloak:</label>
+    <input type="text" id="keycloak" name="keycloak" autocomplete="on" placeholder="keycloak-REGION-admin.eva.bot">
+
+    <label for="organization_id">Organization UUID:</label>
+    <input type="text" id="organization_id" name="organization_id" autocomplete="on">
+    <p class="disclaimer">Note: Organization related variables</p>
+    <hr>
+
+    <label for="environment_id">Environment UUID:</label>
+    <input type="text" id="environment_id" name="environment_id" autocomplete="on">
+
+    <label for="api_key">API Key</label>
+    <input type="text" id="api_key" name="api_key" autocomplete="on">
+
+    <label for="instance">Instance</label>
+    <input type="text" id="instance" name="instance" autocomplete="on">
+
+    <p class="disclaimer">Note: Environment related variables</p>
+    <hr>
+
+    <label for="bot_id">Bot UUID:</label>
+    <input type="text" id="bot_id" name="bot_id" autocomplete="on">
+
+    <label for="channel_id">Channel UUID:</label>
+    <input type="text" id="channel_id" name="channel_id" autocomplete="on">
+    <p class="disclaimer">Note: Bot related variables</p>
+    <input type="submit" value="Submit">
+</form>
+
+
+<script>
+
+
+    document.querySelector('form').addEventListener('submit', function(event) {
+        // Prevent the form from being submitted normally
+        event.preventDefault();
+        
+        fetch('/admin/form', {
+            method: 'POST',
+            body: new FormData(event.target)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status_code === 200) {
+                // Display success message
+                alert(data.message);
+            } else {
+                // Display error message
+                alert('Error: ' + JSON.stringify(data.detail, null, 2));
+            }
+        })
+        .catch(error => {
+            // Handle network errors
+            console.error('Catch Error:', error);
+        });
+    });
+        </script>
+</body>
+</html>

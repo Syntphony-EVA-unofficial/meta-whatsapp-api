@@ -142,3 +142,20 @@ class TM_Template(BaseModel):
 class TM_TemplateMessage(BaseModel):
     type: str
     template: TM_Template
+
+## Models from Admin From 
+class Admin_FormData(BaseModel):
+    organization_name: str
+    email: str
+    password: str
+    facebook_access_token: str
+    facebook_app_id: str
+    facebook_app_secret: str
+    facebook_verify_token: str
+    facebook_phone_id: str
+    keycloak: str
+    organization_id: str
+    environment_id: str
+    instance: str
+    bot_id: str
+    channel_id: str

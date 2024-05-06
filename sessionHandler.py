@@ -15,11 +15,12 @@ from dotenv import load_dotenv
 # MongoDB
 load_dotenv('variables.env')
 
-
 uri = f"{os.getenv('MONGO_URI')}?retryWrites=true&w=majority"
 client = MongoClient(uri)
-db = client[os.getenv("MONGO_DB")]
-whatsapp_users = db['whatsapp_users']
+dbClient = client[os.getenv("MONGO_DB")]
+whatsapp_users = dbClient['whatsapp_users']
+
+
 
 class Session:
     _shared_state = {}
@@ -29,6 +30,10 @@ class Session:
         self.evaSessionCode = None
         self.evaToken = None
         self.UserID = None
+        self.config_variables = dbClient['config_variables']
+        self.loaded_variables = None
+        
+
 
     async def getSession(self, userID: str):
         logging.info("Enter to function Get Session TIME: %s", datetime.now(timezone.utc))
@@ -65,7 +70,6 @@ class Session:
         logging.info(f"Update Time of session values: {timestamp}")
 
     async def findSession(self, userID: str):
-        logging.info("Enter finding user %s TIME: %s",userID, datetime.now(timezone.utc))
         try:
            
             query = {
@@ -74,7 +78,6 @@ class Session:
             found_user = whatsapp_users.find_one(query)
             
             if found_user is not None:
-                logging.info("Found User Result: %s", found_user["userUniqueID"])
                 timestamp = found_user["timestamp"]
                 timestamp = timestamp.replace(tzinfo=pytz.UTC)
 
@@ -92,38 +95,74 @@ class Session:
         #this line Return a default value when found_user is None or an exception is raised
         return None, None  
 
-    async def GenerateToken(self):
-        logging.info("Enter to function Token Gen TIME: %s", datetime.now(timezone.utc))
+    async def GeneratePasswordToken(self, email , password, keycloak, organization):
+        logging.info("Enter to function Password Token Gen TIME: %s", datetime.now(timezone.utc))
         data = {
-            'grant_type': 'client_credentials',
-            'client_id': os.getenv('EVA_CLIENT_ID'),
-            'client_secret': os.getenv('EVA_SECRET'),
+            'grant_type': 'password',
+            'client_id': 'eva-cockpit',
+            'username': email,
+            'password': password
         }
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
-        url = f"{os.getenv('EVA_KEYCLOAK')}/auth/realms/{os.getenv('EVA_ORGANIZATION')}/protocol/openid-connect/token"
+        url = f"{keycloak}/auth/realms/{organization}/protocol/openid-connect/token"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(url, headers=headers, data=urllib.parse.urlencode(data))
                 response.raise_for_status()
                 token = response.json().get('access_token')
-                logging.info(f"token expiration: {response.json().get('expires_in')}")
-                return token
+                return token, None
             except httpx.HTTPError as error:
-                logging.error("HTTPError  generating Access Token: %s", str(error))
+                logging.error("HTTPError Error Generating Access Token: %s", str(error))
+                return None, str(error)
+
             except Exception as error:
-                logging.error("Error generating Access Token: %s", str(error))
+                logging.error("Error Generating Access Token: %s", str(error))
+                return None, str(error)
+
+    
+
+    async def GenerateToken(self):
+        
+        logging.info("Enter to function Token Gen TIME: %s", datetime.now(timezone.utc))
+        return self.GeneratePasswordToken(
+            self.getenv('EMAIL'),
+            self.getenv('PASSWORD'),
+            self.getenv('KEYCLOAK'),
+            self.getenv('ORGANIZATION_NAME')
+        )
+        
+        # data = {
+        #     'grant_type': 'client_credentials',
+        #     'client_id': os.getenv('EVA_CLIENT_ID'),
+        #     'client_secret': os.getenv('EVA_SECRET'),
+        # }
+        # headers = {
+        #     'Content-Type': 'application/x-www-form-urlencoded'
+        # }
+        # url = f"{self.getenv('KEYCLOAK')}/auth/realms/{self.getenv('ORGANIZATION_NAME')}/protocol/openid-connect/token"
+        # logging.info(f"url to generate token {url}")
+        # async with httpx.AsyncClient() as client:
+        #     try:
+        #         response = await client.post(url, headers=headers, data=urllib.parse.urlencode(data))
+        #         response.raise_for_status()
+        #         token = response.json().get('access_token')
+        #         logging.info(f"token expiration: {response.json().get('expires_in')}")
+        #         return token
+        #     except httpx.HTTPError as error:
+        #         logging.error("HTTPError  generating Access Token: %s", str(error))
+        #     except Exception as error:
+        #         logging.error("Error generating Access Token: %s", str(error))
 
     async def GenerateSessionCode(self):
         logging.info("Enter to function Session Code Gen TIME: %s", datetime.now(timezone.utc))
-        logging.info(f"Sending Welcome message to evaBroker")
-        instance = os.getenv('EVA_INSTANCE')  
-        orgUUID = os.getenv('EVA_ORG_UUID')
-        envUUID = os.getenv('EVA_ENV_UUID')
-        botUUID = os.getenv('EVA_BOT_UUID')
-        channelUUID = os.getenv('EVA_CHANNEL_UUID')
-        api_key = os.getenv('EVA_APIKEY')  # replace with your API key
+        instance = self.getenv('INSTANCE')  
+        orgUUID = self.getenv('ORGANIZATION_ID')
+        envUUID = self.getenv('ENVIRONMENT_ID')
+        botUUID = self.getenv('BOT_ID')
+        channelUUID = self.getenv('CHANNEL_ID')
+        api_key = self.getenv('API_KEY')  # replace with your API key
 
         url = f"https://{instance}/eva-broker/org/{orgUUID}/env/{envUUID}/bot/{botUUID}/channel/{channelUUID}/v1/conversations"
 
@@ -146,7 +185,6 @@ class Session:
         try:
             response_data = response.json()
             instanceEvaResponse = ResponseModel.model_validate(response_data)
-            logging.info(f"Match to eva response")
             return instanceEvaResponse.sessionCode
 
         except ValidationError as e:
@@ -164,3 +202,35 @@ class Session:
             upsert=True
             )
         return timestamp
+    
+    def check_record(self, botid, phoneid):
+        logging.info("Enter to function Check Record TIME: %s", datetime.now(timezone.utc))
+        query = {
+            "bot_id": botid,
+            "facebook_phone_id": phoneid
+        }
+        found_user = self.config_variables.find_one(query)
+        if found_user is not None:
+            return found_user["facebook_verify_token"]
+        else:
+            return None
+    
+    async def load_config(self, botid: str, phoneid: str):
+        if self.loaded_variables is None:
+            try:
+                logging.info("Getting config data from database")
+                self.loaded_variables = self.config_variables.find_one({"BOT_ID": botid, "FACEBOOK_PHONE_ID": phoneid})
+                return True                
+            except Exception as e:
+                logging.error(f"Error getting config data: {e}")
+                return False
+        return True
+    
+    def getenv(self, key: str):
+        if self.loaded_variables is not None:
+            return self.loaded_variables.get(key)
+        else:
+            return None
+                
+#defining the sessioncode and sessiontoken as none
+session = Session()
