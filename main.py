@@ -55,7 +55,7 @@ async def verify_webhook(request: Request):
         logging.error(f"HTTP error occurred: {e.detail}")
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        logging.error(f"An error1 occurred: {e}")
         logging.error(traceback.format_exc())
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred"})
 
@@ -79,7 +79,7 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
         #This singature is to be sure that the request is coming from WhatsApp API
         await signature_required(request)
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        logging.error(f"An error2 occurred: {e}")
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     try:
@@ -92,6 +92,10 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
             for entry in webhook_data.entry:
                 for change in entry.changes:
                     for message in change.value.messages:
+                        userId = f'{message["from"]}&{phoneid}'
+                        logging.info(f"composed User ID: {userId}")
+                        session.UserID = userId
+                        session.fromPhone = message["from"]
                         if message["type"] == "text":
                             await HandleTextMessage(message)
                             updateRecord = True
@@ -119,8 +123,8 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
                 logging.warning(f"Received unexpected data: {data}")
 
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
-        raise HTTPException(status_code=500, detail="An error occurred while processing the request.")
+        logging.error(f"An error3 occurred: {e}")
+        raise HTTPException(status_code=500, detail="An error3 occurred while processing the request.")
 
 
 async def HandleAudioMessage(message):
@@ -135,7 +139,7 @@ async def HandleAudioMessage(message):
                 logging.info(f"The size of the binary data is {len(downloadAudio)} bytes")
                 STT_Result = transcribe_file_v2("seu-whatsapp-api",downloadAudio)
                 if STT_Result:
-                    evaSessionCode, evaToken = await session.getSession(message["from"])
+                    evaSessionCode, evaToken = await session.getSession()
                     await send_message_to_eva(STT_Result)
                     return    
             else:
@@ -153,7 +157,7 @@ def transcribe_file_v2(  project_id: str, audio_data: bytes,) -> cloud_speech.Re
     content = audio_data
     config = cloud_speech.RecognitionConfig(
         auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
-        language_codes=["en-US", "es-ES", "fr-FR", "pt-BR"],
+        language_codes=["en-US", "es-ES", "fr-FR"],
         model="long",
     )
 
@@ -171,7 +175,7 @@ def transcribe_file_v2(  project_id: str, audio_data: bytes,) -> cloud_speech.Re
         return response.results[0].alternatives[0].transcript
     
     except Exception as e:
-        logging.error(f"An error occurred in Transcribe: {e}")
+        logging.error(f"An error4 occurred in Transcribe: {e}")
         return None
 
 async def getDownloadAudio(audioURL):    
@@ -246,7 +250,7 @@ async def HandleInteractivePressed(message):
     interactive_message = json.dumps(message, indent=4)
     logging.info(f"Data of interactive: {interactive_message}")  # Corrected line
     
-    evaSessionCode, evaToken = await session.getSession(message["from"])
+    evaSessionCode, evaToken = await session.getSession()
     
     
     if (message["interactive"]["type"] == "button_reply"):
@@ -267,7 +271,7 @@ async def HandleImageMessage(message):
 async def HandleTextMessage(message):
 
     logging.info("Handling text message")
-    evaSessionCode, evaToken = await session.getSession(message["from"])
+    evaSessionCode, evaToken = await session.getSession()
 
     
     await send_message_to_eva(message["text"]["body"])     
@@ -319,7 +323,7 @@ async def send_message_to_eva( user_message):
     answers = instanceEvaResponse.answers
 
     for answer in answers:
-        headers, data = prepare_message(answer, session.UserID)
+        headers, data = prepare_message(answer, session.fromPhone)
         response = send_message_whatsapp(headers, data)
         # Check the response status
         if response.status_code != 200:
@@ -340,6 +344,10 @@ def prepare_message(answer: Answer, user_id):
         "recipient_type": "individual",
         "to": user_id
     }
+
+    #logging.info("data: " + json.dumps(data, indent=4))
+    #logging.info("headers: " + json.dumps(headers, indent=4))    
+    #logging.info("userid: " + user_id)
 
     # Determine the message type
     if answer.technicalText is None:

@@ -30,22 +30,23 @@ class Session:
         self.evaSessionCode = None
         self.evaToken = None
         self.UserID = None
+        self.fromPhone = None
         self.config_variables = dbClient['config_variables']
         self.loaded_variables = None
         
 
 
-    async def getSession(self, userID: str):
+    async def getSession(self):
         logging.info("Enter to function Get Session TIME: %s", datetime.now(timezone.utc))
         if self.evaSessionCode is not None and self.evaToken is not None:
             logging.info("Session already exists")
             return self.evaSessionCode, self.evaToken
         else:
             logging.info("Session does not exist, go finding user...")
-            self.evaSessionCode, self.evaToken = await self.findSession(userID)
+            self.evaSessionCode, self.evaToken = await self.findSession(session.UserID)
 
 
-        self.UserID = userID
+        
         updateRecord = False
         if self.evaToken is None:
             self.evaToken= await self.GenerateToken()
@@ -126,12 +127,17 @@ class Session:
     async def GenerateToken(self):
         
         logging.info("Enter to function Token Gen TIME: %s", datetime.now(timezone.utc))
-        return self.GeneratePasswordToken(
+        token, error = await self.GeneratePasswordToken(
             self.getenv('EMAIL'),
             self.getenv('PASSWORD'),
             self.getenv('KEYCLOAK'),
             self.getenv('ORGANIZATION_NAME')
         )
+        if not error:
+            return token
+        else:
+            logging.error(f"Error generating token: {error}")
+            return None
         
         # data = {
         #     'grant_type': 'client_credentials',
@@ -178,11 +184,20 @@ class Session:
             "code": "%EVA_WELCOME_MSG"
             })      
         
+        #logging.info("url to generate session code: %s", url)
+        #logging.info("headers to generate session code: %s", headers)
+        #logging.info("data to generate session code: %s", data) 
+        #logging.info("token to generate session code: %s", self.evaToken)
+
+
+
+
         logging.info(f"Welcome Message to eva config from {self.UserID} at {datetime.now(timezone.utc)}")
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, data=data)
 
         try:
+            logging.info(f"Response from Eva: {response.json()}")
             response_data = response.json()
             instanceEvaResponse = ResponseModel.model_validate(response_data)
             return instanceEvaResponse.sessionCode
@@ -206,12 +221,12 @@ class Session:
     def check_record(self, botid, phoneid):
         logging.info("Enter to function Check Record TIME: %s", datetime.now(timezone.utc))
         query = {
-            "bot_id": botid,
-            "facebook_phone_id": phoneid
+            "BOT_ID": botid,
+            "FACEBOOK_PHONE_ID": phoneid
         }
         found_user = self.config_variables.find_one(query)
         if found_user is not None:
-            return found_user["facebook_verify_token"]
+            return found_user["FACEBOOK_VERIFY_TOKEN"]
         else:
             return None
     
