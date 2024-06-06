@@ -1,13 +1,18 @@
 ### Before to start.
 
 # EVA account
-You need an account in (EVA) Syntphony Conversational Experience https://www.eva.bot
+You need an account in (EVA) Syntphony Conversational AI https://www.eva.bot
 The login site is https://[REGION].admin.bot/login
 
-# Get the code
-git clone https://github.com/Syntphony-EVA-unofficial/meta-whatsapp-api.git
-You will need to create/fill with variables and keys a file called variables.env, you can modify variable.env.template as guideline
+# Deploy or use this project
 
+If you want to deploy, go to [deploy instructions](/deploy.md) and get your own instance url.
+If you want to use the testing instance, continue this guide and use this URL as server instance:
+
+https://with-audiosupport-ruo567n7ja-uc.a.run.app
+
+
+# Setup the Whatsapp - Syntphony CAI configuration
 ### Facebook/Meta setup 
 1. You will need a Facebook bussines account, https://business.facebook.com/
 2. You will need a Meta developer account, https://developers.facebook.com/
@@ -42,35 +47,46 @@ Generate a token selecting the App and the permisions for the token.
 
 This concludes the setup using the Meta developer account for Now. Now is time to deploy the server
 
-### Deploy server
+### Add the configuration in the server
 
-9. For testing purposes, you may use ngrok, for deployment you can choose a cloud services like Google CloudRuns
+This step is required or the webhook will not be verified.
 
-For ngrok use this command:
-ngrok http --domain=yourngrokurl.ngrok-free.app 8000
-
-You can buy or get a free static ngrok url
-
-For google cloud run use this commands:
-
-TODO: write instructions
+Go to this page and fill all the values asked.
+https://serverinstance.app/admin
 
 ### Configure webhook server in Meta for Developer
 
-10. From the side menu Whatsapp/Configuration:
-* Add the webhook callback URL, it may be something like: "https://yourapplication.app/webhook"
-* Add any "verification token" of your choice, fill in **VERIFICATION_TOKEN** in variables.env
-* To verify the wehbook, you need to have the server running
+From the side menu Whatsapp/Configuration:
 
-11. After verify the webhook, go to webhook fields and suscribe to messages
+Add the webhook callback URL, the url is made by 3 components
+* The URL of the instance your are using as connector
+* The botid from SynthponyCAI as parameter
+* The phoneid from Whatsapp configuration as parameter
+The URL should be like this "https://yourapplication.app/webhook?botid=ABCDE-12345-ABCDE?phoneid=1234123123" 
+
+Add any "verification token" of your choice, fill in **VERIFICATION_TOKEN** in variables.env
+
+This verification fails, the URL will not be saved in the Facebook Developer configuration, some causes for this may be:
+1. You have not inserted your configuration in the admin page https://serverinstance.app/admin
+1. You do not have access to edit that bot ID
+2. The server is not running, listening the port or fordwarding the port (in case you are running from local)
+3.  The parameters are wrong
+
+After verify the webhook, go to webhook fields and suscribe to messages
 ![suscribe messages](/tutorial%20pictures/suscribe%20messages.png)
 
-### Add templates
+# Done
+This finalize the configuration
+
+### Extra. Add templates
 
 Not every message and style can be send without templates.
+
 To create a template go to *Bussines Settings*, *Whatsapp Account* and then *Whatsapp Manager*.
+
 In the Whatsapp account you want to manage, click the 3-dot menu icon and then *Manage Whatsapp templates*
-Create the message templates you need. 
+Create the message templates you need.
+ 
 In the eva bots you will need the *Template name*, the *Language* and fill the variables you declare if any.
 Also check on the *Namespace* since this is required
 check this, https://developers.facebook.com/docs/whatsapp/api/messages/message-templates/
