@@ -62,7 +62,7 @@ Add the webhook callback URL, the url is made by 3 components
 * The URL of the instance your are using as connector
 * The botid from SynthponyCAI as parameter
 * The phoneid from Whatsapp configuration as parameter
-The URL should be like this "https://yourapplication.app/webhook?botid=ABCDE-12345-ABCDE?phoneid=1234123123" 
+The URL should be like this "https://yourapplication.app/webhook?botid=ABCDE-12345-ABCDE&phoneid=1234123123" 
 
 Add any "verification token" of your choice, fill in **VERIFICATION_TOKEN** in variables.env
 
