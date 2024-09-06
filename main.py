@@ -107,10 +107,14 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
                             updateRecord = True
                         elif message["type"] == "audio":    
                             await HandleAudioMessage(message)
-                            #updateRecord = True
+                            updateRecord = True
+                        elif message["type"] == "location":
+                            await HandleLocationMessage(message)
+                            updateRecord = True
 
                         else:
                             logging.warning(f"Message type not supported: {message['type']}")
+                            logging.info(f"Message data: {json.dumps(message, indent=4)}")
             if updateRecord:
                 await session.updateTime()
             return {"status": "ok"}
@@ -123,8 +127,21 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
                 logging.warning(f"Received unexpected data: {data}")
 
     except Exception as e:
-        logging.error(f"An error3 occurred: {e}")
-        raise HTTPException(status_code=500, detail="An error3 occurred while processing the request.")
+        logging.error(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while processing the request.")
+
+async def HandleLocationMessage(message):
+    logging.info("Handling text message")
+
+    context = {
+        "location": {
+            "latitude": message["location"]["latitude"],
+            "longitude": message["location"]["longitude"]
+        }
+    }
+
+    evaSessionCode, evaToken = await session.getSession()
+    await send_message_to_eva(" ", context)
 
 
 async def HandleAudioMessage(message):
@@ -279,7 +296,9 @@ async def HandleTextMessage(message):
     return   
 
 
-async def send_message_to_eva( user_message):
+
+async def send_message_to_eva(user_message, context = None):
+
     logging.info(f"Sending message to evaBroker (TIME) {datetime.now(timezone.utc)}")
     instance = session.getenv('INSTANCE')  
     orgUUID = session.getenv('ORGANIZATION_ID')
@@ -298,9 +317,17 @@ async def send_message_to_eva( user_message):
         'LOCALE': 'en-US',
         'Authorization': f'Bearer {session.evaToken}'
     }
-    data = json.dumps({
-        "text": user_message
-    })
+    # Check if context is present and construct the JSON accordingly
+    if context:
+        data = json.dumps({
+            "text": user_message,
+            "context": context
+        })
+    else:
+        data = json.dumps({
+            "text": user_message
+        })
+    
     async with httpx.AsyncClient() as client:
         response = await client.post(url, headers=headers, data=data)
     

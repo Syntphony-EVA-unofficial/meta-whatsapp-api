@@ -42,7 +42,7 @@ class Session:
             logging.info("Session already exists")
             return self.evaSessionCode, self.evaToken
         else:
-            logging.info("Session does not exist, go finding user...")
+            logging.info("Session None, go finding user...")
             self.evaSessionCode, self.evaToken = await self.findSession(session.UserID)
 
 
@@ -139,28 +139,7 @@ class Session:
             logging.error(f"Error generating token: {error}")
             return None
         
-        # data = {
-        #     'grant_type': 'client_credentials',
-        #     'client_id': os.getenv('EVA_CLIENT_ID'),
-        #     'client_secret': os.getenv('EVA_SECRET'),
-        # }
-        # headers = {
-        #     'Content-Type': 'application/x-www-form-urlencoded'
-        # }
-        # url = f"{self.getenv('KEYCLOAK')}/auth/realms/{self.getenv('ORGANIZATION_NAME')}/protocol/openid-connect/token"
-        # logging.info(f"url to generate token {url}")
-        # async with httpx.AsyncClient() as client:
-        #     try:
-        #         response = await client.post(url, headers=headers, data=urllib.parse.urlencode(data))
-        #         response.raise_for_status()
-        #         token = response.json().get('access_token')
-        #         logging.info(f"token expiration: {response.json().get('expires_in')}")
-        #         return token
-        #     except httpx.HTTPError as error:
-        #         logging.error("HTTPError  generating Access Token: %s", str(error))
-        #     except Exception as error:
-        #         logging.error("Error generating Access Token: %s", str(error))
-
+      
     async def GenerateSessionCode(self):
         logging.info("Enter to function Session Code Gen TIME: %s", datetime.now(timezone.utc))
         instance = self.getenv('INSTANCE')  
