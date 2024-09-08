@@ -28,18 +28,11 @@ def verify(request: Request):
     mode = params.get("hub.mode")
     challenge = params.get("hub.challenge")
     token = params.get("hub.verify_token")
-    botid= params.get("botid")
-    phoneid = params.get("phoneid")
-
+    
     
     #check if bot and numberid are present in database
-    if session.validate_webhook(botid, phoneid) :
-        verifyToken = session.getenv("FACEBOOK_VERIFY_TOKEN")
-    else:    
-        raise HTTPException(status_code=403, detail="Bot and numberid are not present in database")
-    if (verifyToken is None):
-        raise HTTPException(status_code=403, detail="Bot and numberid are not present in database")     
-
+    verifyToken = session.getenv("FACEBOOK_VERIFY_TOKEN")
+    
     # Check if a token and mode were sent
     if mode and token:
         # Check the mode and token sent are correct

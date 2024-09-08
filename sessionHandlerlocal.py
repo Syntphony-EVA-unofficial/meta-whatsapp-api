@@ -25,24 +25,24 @@ class Session:
         self.evaToken = None
         self.UserID = None
         self.fromPhone = None
-        
+        self.freshtoken = False
         
 
 
     async def getSession(self):
         logging.info("Enter to function Get Session TIME: %s", datetime.now(timezone.utc))
-        if (session.userID in self.session_cache) and ("evaTokenTimestamp" in self.session_cache[self.UserID]) and ("evaToken" in self.session_cache[self.UserID]):
-            timestamp = self.session_cache[session.userID]["evaTokenTimestamp"]
+        if (session.UserID in self.session_cache) and ("evaTokenTimestamp" in self.session_cache[self.UserID]) and ("evaToken" in self.session_cache[self.UserID]):
+            timestamp = self.session_cache[session.UserID]["evaTokenTimestamp"]
             timestamp = timestamp.replace(tzinfo=pytz.UTC)
     
-        if self.evaToken is None or datetime.now(timezone.utc) - timestamp > timedelta(seconds=900):  # token expiry time
-            self.evaToken, error = await self.GenerateToken()
-            if error:
-                logging.error(f"Error generating token: {error}")
-                return None, None
-            
-            logging.info(f"Token has been generated {str(self.evaToken)[:10]}")
-            await self.updateTokenTimestamp()
+            if datetime.now(timezone.utc) - timestamp > timedelta(seconds=900):  # token expiry time
+                self.evaToken, error = await self.GenerateToken()
+                if error:
+                    logging.error(f"Error generating token: {error}")
+                    return None, None
+                
+                logging.info(f"Token has been generated {str(self.evaToken)[:10]}")
+                await self.updateTokenTimestamp()
         
        
         return self.evaSessionCode, self.evaToken
@@ -70,12 +70,13 @@ class Session:
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
-        url = f"{session.getenv("EVA_KEYCLOAK")}/auth/realms/{session.getenv("EVA_ORG_UUID")}/protocol/openid-connect/token"
+        url = f"{session.getenv('EVA_KEYCLOAK')}/auth/realms/{session.getenv('EVA_ORGANIZATION')}/protocol/openid-connect/token"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(url, headers=headers, data=urllib.parse.urlencode(data))
                 response.raise_for_status()
                 token = response.json().get('access_token')
+                session.freshtoken = True
                 return token, None
             except httpx.HTTPError as error:
                 logging.error("HTTPError Error Generating Access Token: %s", str(error))
@@ -87,42 +88,28 @@ class Session:
 
     
 
-    async def GenerateToken(self):
-        
-        logging.info("Enter to function Token Gen TIME: %s", datetime.now(timezone.utc))
-        token, error = await self.GenerateToken(
-            self.getenv('EMAIL'),
-            self.getenv('PASSWORD'),
-            self.getenv('KEYCLOAK'),
-            self.getenv('ORGANIZATION_NAME')
-        )
-        if not error:
-            return token
-        else:
-            logging.error(f"Error generating token: {error}")
-            return None
-        
-      
-
-    async def saveSession(self, evaSessionCode: str, evaToken: str):
+    async def saveSession(self):
         timestamp = datetime.now(timezone.utc)
         logging.info("Enter to function Save Session TIME: %s", timestamp)
-        #logging.info(f"Eva Session Code: {self.evaSessionCode}, Eva Token: {self.evaToken}, User ID: {self.UserID}")        
-        whatsapp_users.update_one(
-            {"userUniqueID": self.UserID},
-            {"$set": {"evaSessionCode": evaSessionCode, "evaToken": evaToken, "timestamp": timestamp}},
-            upsert=True
-            )
+        
+        # Update the local cache with the new session information
+        self.session_cache[self.UserID] = {
+            "evaSessionCode": self.evaSessionCode,
+            "evaToken": self.evaToken,
+            "evaTokenTimestamp": timestamp
+        }
+        
+        logging.info(f"Session saved for UserID: {self.UserID}")
         return timestamp
     
    
     
-    async def validate_webhook(self, botid: str, phoneid: str):
+    async def validate_webhook(self):
         try:
             env_botid = os.getenv('EVA_BOT_UUID')
             env_phoneid = os.getenv('FACEBOOK_PHONE_ID')
             
-            if botid == env_botid and phoneid == env_phoneid:
+            if env_botid is not None and env_phoneid is not None:
                 logging.info("webhook validated")
                 return True
             else:

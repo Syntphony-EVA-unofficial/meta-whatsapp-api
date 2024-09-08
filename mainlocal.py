@@ -60,18 +60,16 @@ async def verify_webhook(request: Request):
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred"})
 
 
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_form(request: Request):
-    return templates.TemplateResponse("admin.html", {"request": request})
+
 
 @app.get("/test")
 def test_endpoint():
     return {"message": "This is a test endpoint"}
 
 @app.post("/webhook")
-async def handle_incoming_user_message(request: Request, botid: str, phoneid: str):
+async def handle_incoming_user_message(request: Request):
 
-    if not await session.validate_webhook(botid, phoneid):
+    if not await session.validate_webhook():
         logging.error("Failed to load config data")
         raise HTTPException(status_code=500, detail="Failed to load config data")
 
@@ -92,9 +90,7 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
             for entry in webhook_data.entry:
                 for change in entry.changes:
                     for message in change.value.messages:
-                        userId = f'{message["from"]}&{phoneid}'
-                        logging.info(f"composed User ID: {userId}")
-                        session.UserID = userId
+                        session.UserID = message["from"]
                         session.fromPhone = message["from"]
                         if message["type"] == "text":
                             await HandleTextMessage(message)
@@ -116,7 +112,7 @@ async def handle_incoming_user_message(request: Request, botid: str, phoneid: st
                             logging.warning(f"Message type not supported: {message['type']}")
                             logging.info(f"Message data: {json.dumps(message, indent=4)}")
             if updateRecord:
-                await session.updateTime()
+                await session.saveSession()
             return {"status": "ok"}
         except ValidationError:
             #message must be status read,sent,delivered
@@ -300,14 +296,16 @@ async def HandleTextMessage(message):
 async def send_message_to_eva(user_message, context = None):
 
     logging.info(f"Sending message to evaBroker (TIME) {datetime.now(timezone.utc)}")
-    instance = session.getenv('INSTANCE')  
-    orgUUID = session.getenv('ORGANIZATION_ID')
-    envUUID = session.getenv('ENVIRONMENT_ID')
-    botUUID = session.getenv('BOT_ID')
-    channelUUID = session.getenv('CHANNEL_ID')
-    api_key = session.getenv('API_KEY')  # replace with your API key
+    instance = session.getenv('EVA_INSTANCE')  
+    orgUUID = session.getenv('EVA_ORG_UUID')
+    envUUID = session.getenv('EVA_ENV_UUID')
+    botUUID = session.getenv('EVA_BOT_UUID')
+    channelUUID = session.getenv('EVA_CHANNEL_UUID')
+    api_key = session.getenv('EVA_APIKEY')  # replace with your API key
 
-    url = f"https://{instance}/eva-broker/org/{orgUUID}/env/{envUUID}/bot/{botUUID}/channel/{channelUUID}/v1/conversations/{ session.evaSessionCode }"
+    url = f"https://{instance}/eva-broker/org/{orgUUID}/env/{envUUID}/bot/{botUUID}/channel/{channelUUID}/v1/conversations"
+    if session.evaSessionCode:
+        url += f"/{session.evaSessionCode}"
 
     headers = {
         'Content-Type': 'application/json',
@@ -329,13 +327,19 @@ async def send_message_to_eva(user_message, context = None):
         })
     
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, data=data)
-    
-        if response.status_code == 401:
-            newToken = await session.RenewToken()
-            headers['Authorization'] = f'Bearer {newToken}'
+        max_retries = 2
+        for attempt in range(max_retries):
+            headers['Authorization'] = f'Bearer {session.evaToken}'
             response = await client.post(url, headers=headers, data=data)
+    
+            if response.status_code != 401:
+                session.evaSessionCode = response.json().get('sessionCode')
+                break
 
+            session.evaToken, error = await session.GenerateToken()
+            if error:
+                logging.error(f"Failed to generate token: {error}")
+                return
     
     try:
         response_data = response.json()
