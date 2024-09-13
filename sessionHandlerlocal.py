@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from dotenv import load_dotenv
 
 # MongoDB
-load_dotenv('localvariables.env')
+load_dotenv('BPRSHIKP.env')
 
 
 class Session:

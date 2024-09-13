@@ -22,7 +22,6 @@ from pydantic import ValidationError
 from google.cloud.speech_v2 import SpeechClient
 from google.cloud.speech_v2.types import cloud_speech
 from google.oauth2 import service_account
-from admin.admin import router as admin_router
 
 import aiohttp
 import aiofiles
@@ -31,17 +30,13 @@ logging.basicConfig(level=logging.INFO)
 
 from sessionHandlerlocal import session
  
-load_dotenv('local variables.env')
+load_dotenv('BPRSHIKP.env')
 
 
 
 app = FastAPI()
-app.include_router(admin_router)
 
-app.mount("/admin", StaticFiles(directory="admin"), name="admin")
-templates = Jinja2Templates(directory="admin")
 
-    
 
 
 #Verify the webhook from WhatsApp API configuration, this is only needed once
