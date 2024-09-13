@@ -7,8 +7,10 @@ __pycache__
 #google Key
 key.json
 
-#variables
-variables.env
+# Ignore all .env files
+*.env
+
 run instructions.md
+
 
 
