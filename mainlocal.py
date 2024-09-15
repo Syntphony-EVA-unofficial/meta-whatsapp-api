@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 import uvicorn
 from dotenv import load_dotenv
 from starlette.responses import Response
-from models import IL_ListMessage, ResponseModel, WebhookData, Answer, MM_MediaMessage, TM_TemplateMessage
+from models import IL_ListMessage, ResponseModel, WebhookData, Answer, MM_MediaMessage, TM_TemplateMessage, LM_LocationRequestMessage, LM_LocationMessageFromEva
 from utilslocal import signature_required, verify
 from datetime import datetime, timedelta, timezone
 import urllib
@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.INFO)
 
 from sessionHandlerlocal import session
  
-load_dotenv('BPRSHIKP.env')
+load_dotenv('variables.env')
 
 
 
@@ -154,8 +154,6 @@ async def HandleAudioMessage(message):
                 logging.info("The downloadAudio data is not in binary format")
                 return
 
-
-
 def transcribe_file_v2(  project_id: str, audio_data: bytes,) -> cloud_speech.RecognizeResponse:
     # Instantiates a client
     credentials = service_account.Credentials.from_service_account_file('key.json')
@@ -215,7 +213,6 @@ async def getDownloadAudio(audioURL):
         logging.error(f"An unexpected error occurred: {e}")
         return None
         
-
 async def getAudioURL(audioID):
     logging.info(f"Data of AudioMessage: {audioID}")  # Corrected line
     #get audio message
@@ -248,7 +245,6 @@ async def getAudioURL(audioID):
         logging.error(f"An unexpected error occurred: {e}")
         return None
 
-
 async def HandleInteractivePressed(message):
     # Add your code to handle the interactive message here  
     #logging.info(f"Data of interactive: {json.dumps(data, indent=4)}")  # Add this line
@@ -271,7 +267,6 @@ async def HandleInteractivePressed(message):
 
     return   
 
-
 async def HandleImageMessage(message):
     # Add your code to handle the text message here
     pass
@@ -285,8 +280,6 @@ async def HandleTextMessage(message):
     await send_message_to_eva(message["text"]["body"])     
 
     return   
-
-
 
 async def send_message_to_eva(user_message, context = None):
 
@@ -436,7 +429,42 @@ def prepare_message(answer: Answer, user_id):
             except ValidationError as e:
                 logging.error(f"Message is not TM_TemplateMessage: {e}")
                 logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")    
-
+        
+        if not model_found:
+            try:
+                instanceLocationMessage = LM_LocationRequestMessage.model_validate(answer.technicalText)
+                model_found = True
+                logging.info(f"LocationRequest message detected")
+                data["type"] = "INTERACTIVE"
+                data["interactive"] ={
+                    "type": "location_request_message",
+                    "body": {
+                        "text": instanceLocationMessage.text
+                        },
+                    "action": {
+                        "name": "send_location"
+                        }
+                }
+                
+            except ValidationError as e:
+                logging.error(f"Message is not LM_LocationRequestMessage: {e}")
+                logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")    
+        
+        if not model_found:
+            try:
+                instanceLocation = LM_LocationMessageFromEva.model_validate(answer.technicalText)
+                model_found = True
+                logging.info(f"Location message detected")
+                data["type"] = "location"
+                data["location"] = {
+                        "latitude": instanceLocation.location.latitude,
+                        "longitude": instanceLocation.location.longitude,
+                        "name": instanceLocation.location.name,
+                        "address": instanceLocation.location.address
+                }   
+            except ValidationError as e:
+                logging.error(f"Message is not LM_LocationMessageFromEva: {e}")
+                logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")
 
         if not model_found:
             logging.warning(f"Technical text model not supported (defaulted to text)")

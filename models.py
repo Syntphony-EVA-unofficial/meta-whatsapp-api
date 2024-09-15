@@ -1,7 +1,7 @@
 # models.py
 from enum import Enum
 import json
-from typing import List, Dict, Any, Optional, Union
+from typing import Literal, List, Dict, Any, Optional, Union
 from pydantic import BaseModel, HttpUrl, field_validator
 from typing import List
 
@@ -49,10 +49,12 @@ class Answer(BaseModel):
     technicalText: Optional[Union[Dict, str]]
     buttons: List[dict]
     quickReply: List[dict]
-    description: str
+    description: Optional[str]  # Allow null values
     type: str
     interactionId: str
     evaluable: bool
+    masked: Optional[bool]  # Add the masked field
+
 
     @field_validator('technicalText')
     def parse_technical_text(cls, v):
@@ -116,8 +118,19 @@ class MM_MediaMessage(BaseModel):
     type: MM_Type
     link: HttpUrl
 
+class LM_LocationRequestMessage(BaseModel):
+    type: Literal["location_request_message"]
+    text: str
 ### Models for the Whatsapp API. TM for Template Message
 
+class LM_Location(BaseModel):
+    latitude: float
+    longitude: float
+    name: str
+    address: str
+
+
+### Models for the Whatsapp API. TM for Template Message
 
 class TM_Component(BaseModel):
     type: str
@@ -159,3 +172,7 @@ class Admin_FormData(BaseModel):
     instance: str
     bot_id: str
     channel_id: str
+
+class LM_LocationMessageFromEva(BaseModel):
+    type: Literal["location"]
+    location: LM_Location

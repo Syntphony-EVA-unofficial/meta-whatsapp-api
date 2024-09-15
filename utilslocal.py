@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from dotenv import load_dotenv
 from sessionHandlerlocal import session
 
-load_dotenv('BPRSHIKP.env')
+load_dotenv('variables.env')
 
 def verify(request: Request):
     verifyToken = None

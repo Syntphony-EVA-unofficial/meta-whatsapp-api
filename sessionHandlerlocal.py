@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from dotenv import load_dotenv
 
 # MongoDB
-load_dotenv('BPRSHIKP.env')
+load_dotenv('variables.env')
 
 
 class Session:
@@ -61,7 +61,7 @@ class Session:
 
 
     async def GenerateToken(self):
-        logging.info("Enter to function Password Token Gen TIME: %s", datetime.now(timezone.utc))
+        logging.info("Enter to function Token Gen TIME: %s", datetime.now(timezone.utc))
         data = {
             'grant_type': 'client_credentials',
             'client_id': session.getenv('EVA_CLIENT_ID'),
