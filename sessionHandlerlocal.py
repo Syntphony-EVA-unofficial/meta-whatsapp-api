@@ -29,8 +29,9 @@ class Session:
         
 
 
-    async def getSession(self):
+    async def get_session(self):
         logging.info("Enter to function Get Session TIME: %s", datetime.now(timezone.utc))
+        #user in cache and token is not expired
         if (session.UserID in self.session_cache) and ("evaTokenTimestamp" in self.session_cache[self.UserID]) and ("evaToken" in self.session_cache[self.UserID]):
             timestamp = self.session_cache[session.UserID]["evaTokenTimestamp"]
             timestamp = timestamp.replace(tzinfo=pytz.UTC)
@@ -43,7 +44,13 @@ class Session:
                 
                 logging.info(f"Token has been generated {str(self.evaToken)[:10]}")
                 await self.updateTokenTimestamp()
-        
+        #user not in cache
+        if (session.UserID not in self.session_cache):
+            self.evaToken, error = await self.GenerateToken()
+            if error:
+                logging.error(f"Error generating token: {error}")
+                return None, None 
+
        
         return self.evaSessionCode, self.evaToken
 

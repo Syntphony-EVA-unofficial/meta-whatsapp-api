@@ -26,17 +26,11 @@ from google.oauth2 import service_account
 import aiohttp
 import aiofiles
 logging.basicConfig(level=logging.INFO)
-
-
 from sessionHandlerlocal import session
- 
+from WebhookToEVA import WebhookToEVA, EVARequestTuple
+
 load_dotenv('variables.env')
-
-
-
 app = FastAPI()
-
-
 
 
 #Verify the webhook from WhatsApp API configuration, this is only needed once
@@ -53,9 +47,6 @@ async def verify_webhook(request: Request):
         logging.error(f"An error1 occurred: {e}")
         logging.error(traceback.format_exc())
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred"})
-
-
-
 
 @app.get("/test")
 def test_endpoint():
@@ -81,34 +72,28 @@ async def handle_incoming_user_message(request: Request):
         updateRecord = False
         #print(json.dumps(data, indent=4))
         try:
+            
             webhook_data = WebhookData(**data)
-            for entry in webhook_data.entry:
-                for change in entry.changes:
-                    for message in change.value.messages:
-                        session.UserID = message["from"]
-                        session.fromPhone = message["from"]
-                        if message["type"] == "text":
-                            await HandleTextMessage(message)
-                            updateRecord = True
-                        elif message["type"] == "image":
-                            await HandleImageMessage(message)
-                            updateRecord = True
-                        elif message["type"] == "interactive":
-                            await HandleInteractivePressed(message)
-                            updateRecord = True
-                        elif message["type"] == "audio":    
-                            await HandleAudioMessage(message)
-                            updateRecord = True
-                        elif message["type"] == "location":
-                            await HandleLocationMessage(message)
-                            updateRecord = True
-
-                        else:
-                            logging.warning(f"Message type not supported: {message['type']}")
-                            logging.info(f"Message data: {json.dumps(message, indent=4)}")
-            if updateRecord:
+            EVA_Request = await WebhookToEVA.convert(webhook_data)
+            
+            logging.info(f"Webhook incoming data: {json.dumps(data, indent=4)}")
+            
+            
+            if EVA_Request:
+                session.UserID = webhook_data.entry[0].changes[0].value.messages[0]["from"]
+                session.fromPhone = webhook_data.entry[0].changes[0].value.messages[0]["from"]
+                #use to load values from cache and generate a new token if needed
+                await session.get_session()
+                
+                
+                await send_message_to_eva(EVA_Request)
                 await session.saveSession()
-            return {"status": "ok"}
+                return {"status": "ok"}
+            else:
+                logging.warning(f"Data to send to EVA is empty")
+                return {"status": "ok"}
+            
+        
         except ValidationError:
             #message must be status read,sent,delivered
             try:
@@ -120,168 +105,9 @@ async def handle_incoming_user_message(request: Request):
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while processing the request.")
+   
 
-async def HandleLocationMessage(message):
-    logging.info("Handling text message")
-
-    context = {
-        "location": {
-            "latitude": message["location"]["latitude"],
-            "longitude": message["location"]["longitude"]
-        }
-    }
-
-    evaSessionCode, evaToken = await session.getSession()
-    await send_message_to_eva(" ", context)
-
-
-async def HandleAudioMessage(message):
-    # Add your code to handle the text message here
-    audioID = message["audio"]["id"] 
-    audioURL = await getAudioURL(audioID)
-    if (audioURL):
-        downloadAudio = await getDownloadAudio(audioURL)
-        if (downloadAudio):
-            logging.info(f"Audio message downloaded successfully")
-            if isinstance(downloadAudio, bytes):
-                logging.info(f"The size of the binary data is {len(downloadAudio)} bytes")
-                STT_Result = transcribe_file_v2("seu-whatsapp-api",downloadAudio)
-                if STT_Result:
-                    evaSessionCode, evaToken = await session.getSession()
-                    await send_message_to_eva(STT_Result)
-                    return    
-            else:
-                logging.info("The downloadAudio data is not in binary format")
-                return
-
-def transcribe_file_v2(  project_id: str, audio_data: bytes,) -> cloud_speech.RecognizeResponse:
-    # Instantiates a client
-    credentials = service_account.Credentials.from_service_account_file('key.json')
-    client = SpeechClient(credentials=credentials)
-
-    # Reads a file as bytes
-    content = audio_data
-    config = cloud_speech.RecognitionConfig(
-        auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
-        language_codes=["en-US", "es-ES", "fr-FR"],
-        model="long",
-    )
-
-    request = cloud_speech.RecognizeRequest(
-        recognizer=f"projects/{project_id}/locations/global/recognizers/_",
-        config=config,
-        content=content,
-    )
-
-    logging.info(f"Transcribing audio file")
-    # Transcribes the audio into text
-    try:
-        response = client.recognize(request=request)
-        logging.info(f"Transcriptionw all results: {response.results}")
-        return response.results[0].alternatives[0].transcript
-    
-    except Exception as e:
-        logging.error(f"An error4 occurred in Transcribe: {e}")
-        return None
-
-async def getDownloadAudio(audioURL):    
-    
-    # Define the headers
-    headers = {
-        'Authorization': f'Bearer {session.getenv("FACEBOOK_ACCESS_TOKEN")}'
-    }
-    
-    try:
-        # Download the audio file
-        async with httpx.AsyncClient() as client:
-            audio_response = await client.get(audioURL, headers=headers)
-
-        # Store the audio data in a variable
-        audio_data = audio_response.content
-        return audio_data
-
-    except httpx.HTTPStatusError as exc:
-        print(f"An HTTP error occurred: {exc}")
-        return None
-    except httpx.NetworkError:
-        print("A network error occurred.")
-        return None
-    except httpx.TimeoutException:
-        print("The request timed out.")
-        return None
-    except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-        return None
-        
-async def getAudioURL(audioID):
-    logging.info(f"Data of AudioMessage: {audioID}")  # Corrected line
-    #get audio message
-
-    # Define the endpoint
-    url = f"https://graph.facebook.com/v19.0/{audioID}"
-
-    # Define the headers
-    headers = {
-        'Authorization': f'Bearer {session.getenv("FACEBOOK_ACCESS_TOKEN")}'
-    }
-
-    logging.info(f"Trying to get audio message from {url}")
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
-
-    try:
-        response_data = response.json()
-        logging.info(f"data Response {response_data}")
-        logging.info(json.dumps(response_data, indent=4))
-        return response_data["url"] 
-
-    except json.JSONDecodeError:
-        logging.error("Failed to decode JSON response")
-        return None
-    except KeyError:
-        logging.error("The key 'url' was not found in the response data")
-        return None
-    except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-        return None
-
-async def HandleInteractivePressed(message):
-    # Add your code to handle the interactive message here  
-    #logging.info(f"Data of interactive: {json.dumps(data, indent=4)}")  # Add this line
-    
-    
-    logging.info("Handling interactive message")
-    interactive_message = json.dumps(message, indent=4)
-    logging.info(f"Data of interactive: {interactive_message}")  # Corrected line
-    
-    evaSessionCode, evaToken = await session.getSession()
-    
-    
-    if (message["interactive"]["type"] == "button_reply"):
-        valueToEva = message["interactive"]["button_reply"]["id"]
-    elif (message["interactive"]["type"] == "list_reply"):
-        valueToEva = message["interactive"]["list_reply"]["id"]
-
-    
-    await send_message_to_eva(valueToEva)     
-
-    return   
-
-async def HandleImageMessage(message):
-    # Add your code to handle the text message here
-    pass
-
-async def HandleTextMessage(message):
-
-    logging.info("Handling text message")
-    evaSessionCode, evaToken = await session.getSession()
-
-    
-    await send_message_to_eva(message["text"]["body"])     
-
-    return   
-
-async def send_message_to_eva(user_message, context = None):
+async def send_message_to_eva(EVA_Request: EVARequestTuple):
 
     logging.info(f"Sending message to evaBroker (TIME) {datetime.now(timezone.utc)}")
     instance = session.getenv('EVA_INSTANCE')  
@@ -303,16 +129,20 @@ async def send_message_to_eva(user_message, context = None):
         'LOCALE': 'en-US',
         'Authorization': f'Bearer {session.evaToken}'
     }
+
+
     # Check if context is present and construct the JSON accordingly
-    if context:
+    if EVA_Request.context is not None:
         data = json.dumps({
-            "text": user_message,
-            "context": context
+            "text": EVA_Request.content,
+            "context": EVA_Request.context
         })
     else:
         data = json.dumps({
-            "text": user_message
+            "text": EVA_Request.content
         })
+
+    logging.info(f"Sending message to EVA: {json.dumps(json.loads(data), indent=4)}")
     
     async with httpx.AsyncClient() as client:
         max_retries = 2
