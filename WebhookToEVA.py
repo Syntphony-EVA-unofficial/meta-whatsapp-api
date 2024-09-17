@@ -59,11 +59,10 @@ class WebhookToEVA:
         return None
             
     @staticmethod
-    def handle_location(message):
-        print("Handling location message")
+    async def handle_location(message):
+        logging.info("Handling location message")
         EVA_content = " "
         EVA_context = {
-            
             "location": {
                 "latitude": message["location"]["latitude"],
                 "longitude": message["location"]["longitude"]

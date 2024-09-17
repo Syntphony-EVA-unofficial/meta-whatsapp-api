@@ -2,32 +2,31 @@ import logging
 import json
 import os
 import time
-import traceback
 from fastapi import Depends, FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
 from starlette.responses import Response
-from models import IL_ListMessage, ResponseModel, WebhookData, Answer, MM_MediaMessage, TM_TemplateMessage, LM_LocationRequestMessage, LM_LocationMessageFromEva
+from models import ResponseModel, WebhookData, Answer
 from utilslocal import signature_required, verify
-from datetime import datetime, timedelta, timezone
-import urllib
+from datetime import datetime, timezone
 import httpx
 import urllib.parse
 from fastapi import HTTPException
-import pytz
 from pydantic import ValidationError
-from google.cloud.speech_v2 import SpeechClient
-from google.cloud.speech_v2.types import cloud_speech
-from google.oauth2 import service_account
 
-import aiohttp
-import aiofiles
+
 logging.basicConfig(level=logging.INFO)
 from sessionHandlerlocal import session
 from WebhookToEVA import WebhookToEVA, EVARequestTuple
+from SendMessage.InteractiveReplyButton import InteractiveReplyButtonMessage
+from SendMessage.Text import TextMessage
+from SendMessage.InteractiveList import InteractiveListMessage
+from SendMessage.Image import ImageMessage
+from SendMessage.Video import VideoMessage
+from SendMessage.Template import TemplateMessage
+from SendMessage.LocationRequest import LocationRequestMessage
+from SendMessage.Location import LocationMessage
 
 load_dotenv('variables.env')
 app = FastAPI()
@@ -44,8 +43,7 @@ async def verify_webhook(request: Request):
         logging.error(f"HTTP error occurred: {e.detail}")
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
-        logging.error(f"An error1 occurred: {e}")
-        logging.error(traceback.format_exc())
+        logging.error(f"An error in verification occurred: {e}")
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred"})
 
 @app.get("/test")
@@ -172,7 +170,10 @@ async def send_message_to_eva(EVA_Request: EVARequestTuple):
     answers = instanceEvaResponse.answers
 
     for answer in answers:
-        headers, data = prepare_message(answer, session.fromPhone)
+        #headers, data = prepare_message(answer, session.fromPhone)
+        
+        headers, data = EVAToWhatsappAPI(answer, session.fromPhone)
+        
         response = send_message_whatsapp(headers, data)
         # Check the response status
         if response.status_code != 200:
@@ -181,7 +182,7 @@ async def send_message_to_eva(EVA_Request: EVARequestTuple):
         # Wait for 1 second before sending the next message
         time.sleep(1)
 
-def prepare_message(answer: Answer, user_id):
+def EVAToWhatsappAPI(answer: Answer, user_id):
     logging.info(f"Preparing message for WhatsApp API")
     headers = {
         'Authorization': f"Bearer {session.getenv('FACEBOOK_ACCESS_TOKEN')}",
@@ -194,131 +195,34 @@ def prepare_message(answer: Answer, user_id):
         "to": user_id
     }
 
-    #logging.info("data: " + json.dumps(data, indent=4))
-    #logging.info("headers: " + json.dumps(headers, indent=4))    
-    #logging.info("userid: " + user_id)
-
     # Determine the message type
     if answer.technicalText is None:
-        if answer.buttons:
-            logging.info("Buttons found -- mapping to interactive format")
-            data["type"] = "interactive"
-            data["interactive"] = {
-                "type": "button",
-                "body": {
-                    "text": answer.content
-                },
-               "action": {
-                    "buttons": generate_buttons(answer.buttons)
-                }
-            }
+        if InteractiveReplyButtonMessage.validate(answer):
+            data = InteractiveReplyButtonMessage.create(data, answer)
         else:
-            logging.info("Technical text is None and no buttons -- defaulting to text")
-            data["type"]="text"
-            data["text"] = {
-                "preview_url": True,
-                "body": answer.content
-            }
-
-    if answer.technicalText is not None:
+            data = TextMessage.create(data, answer)
+    else:
         model_found = False
 
-        if not model_found:
-            try:
-                instanceListMessage = IL_ListMessage.model_validate(answer.technicalText)
+        for MessageClass in [InteractiveReplyButtonMessage, 
+                             TextMessage, 
+                             InteractiveListMessage, 
+                             ImageMessage, 
+                             VideoMessage, 
+                             TemplateMessage, 
+                             LocationRequestMessage, 
+                             LocationMessage]:
+            if MessageClass.validate(answer):
+                data = MessageClass.create(answer, data)
                 model_found = True
-                logging.info(f"Interactive list message detected")
-                data["type"] = "interactive"
-                data["interactive"] = instanceListMessage.interactive.model_dump()
-            except ValidationError as e:      
-                logging.error(f"Message is not IL_ListMessage: {e}")
-                logging.error(f"Technical text: {json.dumps(answer.technicalText)}")
-        if not model_found:
-            try:
-                instanceMediaMessage = MM_MediaMessage.model_validate(answer.technicalText)
-                model_found = True
-                logging.info(f"Media message detected")
-                data["type"] = instanceMediaMessage.type.value
-                data[instanceMediaMessage.type.value] = {
-                    "link": instanceMediaMessage.link.__str__()
-                }
-                if answer.content is not None:
-                    data[instanceMediaMessage.type.value]["caption"] = answer.content
-            except ValidationError as e:
-                logging.error(f"Message is not MM_MediaMessage: {e}")
-        if not model_found:
-            try:
-                instanceTemplateMessage = TM_TemplateMessage.model_validate(answer.technicalText)
-                model_found = True
-                logging.info(f"Template message detected")
-                data["type"] = "template"
-                data["template"] = instanceTemplateMessage.template.model_dump()
-                #if "namespace" not in data["template"] or data["template"]["namespace"] is None:
-                #    data["template"]["namespace"] = session.getenv("FACEBOOK_TEMPLATE_NAMESPACE")
-                
-            except ValidationError as e:
-                logging.error(f"Message is not TM_TemplateMessage: {e}")
-                logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")    
-        
-        if not model_found:
-            try:
-                instanceLocationMessage = LM_LocationRequestMessage.model_validate(answer.technicalText)
-                model_found = True
-                logging.info(f"LocationRequest message detected")
-                data["type"] = "INTERACTIVE"
-                data["interactive"] ={
-                    "type": "location_request_message",
-                    "body": {
-                        "text": instanceLocationMessage.text
-                        },
-                    "action": {
-                        "name": "send_location"
-                        }
-                }
-                
-            except ValidationError as e:
-                logging.error(f"Message is not LM_LocationRequestMessage: {e}")
-                logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")    
-        
-        if not model_found:
-            try:
-                instanceLocation = LM_LocationMessageFromEva.model_validate(answer.technicalText)
-                model_found = True
-                logging.info(f"Location message detected")
-                data["type"] = "location"
-                data["location"] = {
-                        "latitude": instanceLocation.location.latitude,
-                        "longitude": instanceLocation.location.longitude,
-                        "name": instanceLocation.location.name,
-                        "address": instanceLocation.location.address
-                }   
-            except ValidationError as e:
-                logging.error(f"Message is not LM_LocationMessageFromEva: {e}")
-                logging.info(f"Technical text: {json.dumps(answer.technicalText, indent=4)}")
+                break
 
         if not model_found:
-            logging.warning(f"Technical text model not supported (defaulted to text)")
-            data["type"]="text"
-            data["text"] = {
-                "preview_url": True,
-                "body": answer.content
-             }
+            logging.warning("Technical text model not supported (defaulted to text)")
+            data = TextMessage.create(data,answer)
 
-    return headers, data
+    return headers,data
 
-def generate_buttons(buttons):
-    button_list = []
-    for i, button in enumerate(buttons):
-        if i >= 3:  # Limit to 3 buttons
-            break
-        button_list.append({
-            "type": "reply",
-            "reply": {
-                "id": button['value'],
-                "title": button['name']
-            }
-        })
-    return button_list
 
 def send_message_whatsapp(headers, data):
     logging.info(f"Sending message to WhatsApp API")
