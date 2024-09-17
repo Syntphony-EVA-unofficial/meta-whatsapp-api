@@ -8,8 +8,6 @@ EVARequestTuple = namedtuple('EVARequestTuple', ['content', 'context'])
 
 class WebhookToEVA:
     
-    
-    
     @staticmethod
     async def handle_text(message):
         logging.info("Handling text message")
@@ -71,26 +69,26 @@ class WebhookToEVA:
         return EVARequestTuple(EVA_content, EVA_context)     
 
 
-    type_handlers = {
-        "text": handle_text,
-        #"image": handle_image,
-        "interactive": handle_interactive,
-        "audio": handle_audio,
-        "location": handle_location,
-    }
-
     @staticmethod
     async def convert(webhookData) -> EVARequestTuple:
-        type = webhookData.entry[0].changes[0].value.messages[0]['type']
-        # Call the appropriate handler function based on the type
-        handler = WebhookToEVA.type_handlers.get(type)
-        if handler:
+        try:
+            type = webhookData.entry[0].changes[0].value.messages[0]['type']
+            # Call the appropriate handler function based on the type
             message = webhookData.entry[0].changes[0].value.messages[0]
-            return await handler(message)
-        else:
+            if type == "text":
+                return await WebhookToEVA.handle_text(message)
+            if type == "location":
+                return await WebhookToEVA.handle_location(message)
+            if type == "interactive":
+                return await WebhookToEVA.handle_interactive(message)
+            if type == "audio":
+                return await WebhookToEVA.handle_audio(message)
+            
             logging.warning(f"Message type not supported: {type}")
             logging.info(f"Message data: {json.dumps(message, indent=4)}")
             return None
+        except Exception as e:  
+            logging.error(f"Error in convert to EVA occurred: {e}")
 
 
 #Payload reference

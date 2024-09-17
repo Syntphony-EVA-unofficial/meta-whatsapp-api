@@ -65,16 +65,16 @@ async def handle_incoming_user_message(request: Request):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     try:
-
+        logging.info("mainlocal line 68")
         data = await request.json()
         updateRecord = False
         #print(json.dumps(data, indent=4))
         try:
-            
             webhook_data = WebhookData(**data)
+            logging.info(f"Webhook incoming data: {json.dumps(data, indent=4)}")
+            
             EVA_Request = await WebhookToEVA.convert(webhook_data)
             
-            logging.info(f"Webhook incoming data: {json.dumps(data, indent=4)}")
             
             
             if EVA_Request:
